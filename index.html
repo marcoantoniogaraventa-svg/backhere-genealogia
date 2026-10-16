@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>de Dominis — Genealogia di una famiglia nobile dalmata</title>
+<style>
+:root {
+  --bg: #faf8f5;
+  --bg-card: #ffffff;
+  --bg-header: #1a1a2e;
+  --text: #2c2c2c;
+  --text-light: #6b6b6b;
+  --text-header: #f0e6d3;
+  --accent: #8b6914;
+  --accent-light: #c9a84c;
+  --border: #e0dbd4;
+  --line: #c9a84c;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --radius: 8px;
+  --gen-gap: 48px;
+  --max-w: 1200px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a2e;
+    --bg-card: #242442;
+    --bg-header: #0f0f1e;
+    --text: #e8e4df;
+    --text-light: #9a9a9a;
+    --text-header: #f0e6d3;
+    --accent: #c9a84c;
+    --accent-light: #e0c97a;
+    --border: #3a3a5c;
+    --line: #8b6914;
+    --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1a2e;
+  --bg-card: #242442;
+  --bg-header: #0f0f1e;
+  --text: #e8e4df;
+  --text-light: #9a9a9a;
+  --text-header: #f0e6d3;
+  --accent: #c9a84c;
+  --accent-light: #e0c97a;
+  --border: #3a3a5c;
+  --line: #8b6914;
+  --shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* HEADER */
+.site-header {
+  background: var(--bg-header);
+  color: var(--text-header);
+  text-align: center;
+  padding: 48px 16px 40px;
+  position: relative;
+  overflow: hidden;
+}
+.site-header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse at center, rgba(201,168,76,0.1) 0%, transparent 70%);
+}
+.site-header h1 {
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  position: relative;
+}
+.site-header .subtitle {
+  font-size: clamp(0.85rem, 2vw, 1.05rem);
+  color: var(--accent-light);
+  margin-top: 8px;
+  font-style: italic;
+  position: relative;
+}
+.site-header .crest {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+/* NAV */
+nav {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+nav ul {
+  list-style: none;
+  display: flex;
+  gap: 0;
+  max-width: var(--max-w);
+  margin: 0 auto;
+  overflow-x: auto;
+}
+nav li a {
+  display: block;
+  padding: 14px 20px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+nav li a:hover, nav li a.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+/* SECTIONS */
+.section {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 40px 16px;
+}
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 24px;
+  letter-spacing: 0.05em;
+}
+
+/* TREE */
+.tree-container {
+  overflow-x: auto;
+  padding: 20px 0;
+}
+.tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: fit-content;
+  padding: 0 20px;
+}
+.generation {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: nowrap;
+  position: relative;
+  margin-bottom: var(--gen-gap);
+}
+.generation::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+}
+.generation:first-child::before { display: none; }
+
+.person-node {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 140px;
+  max-width: 200px;
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.person-node:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(139,105,20,0.15);
+}
+.person-node.active {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+.person-node .name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.person-node .dates {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.person-node .role {
+  font-size: 0.7rem;
+  color: var(--accent);
+  margin-top: 4px;
+  font-style: italic;
+}
+.person-node.historical { border-left: 3px solid var(--accent); }
+.person-node.living { border-left: 3px solid #4a8c5c; }
+.person-node.deceased { border-left: 3px solid #7a7a7a; }
+.connector {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+  margin: 0 auto;
+}
+.h-connector {
+  height: 1px;
+  background: var(--line);
+  position: absolute;
+}
+.marriage-symbol {
+  font-size: 0.7rem;
+  color: var(--accent-light);
+  text-align: center;
+  padding: 2px 0;
+}
+
+/* DETAIL PANEL */
+.detail-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 60px 16px 20px;
+  overflow-y: auto;
+}
+.detail-overlay.open { display: flex; }
+.detail-panel {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  max-width: 640px;
+  width: 100%;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+  position: relative;
+  animation: slideUp 0.25s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.detail-header {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-header h2 {
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: var(--accent);
+}
+.detail-header .dates-line {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+.detail-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-light);
+  line-height: 1;
+}
+.detail-body {
+  padding: 20px 24px 24px;
+}
+.detail-body h3 {
+  font-size: 0.95rem;
+  color: var(--accent);
+  margin: 16px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.detail-body h3:first-child { margin-top: 0; }
+.detail-body p, .detail-body li {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+.detail-body ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.detail-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-light);
+}
+.tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin: 2px;
+}
+.tag-green { background: #e8f5e9; color: #2e7d32; }
+.tag-amber { background: #fff8e1; color: #f57f17; }
+.tag-red { background: #fce4ec; color: #c62828; }
+
+/* TIMELINE */
+.timeline {
+  position: relative;
+  padding-left: 32px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+.timeline-item {
+  position: relative;
+  margin-bottom: 24px;
+  padding-left: 20px;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
+.timeline-year {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.timeline-text {
+  font-size: 0.9rem;
+  margin-top: 2px;
+}
+
+/* SOURCES */
+.source-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.source-item:last-child { border-bottom: none; }
+.source-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.source-url {
+  font-size: 0.8rem;
+  color: var(--accent);
+  word-break: break-all;
+}
+.source-desc {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+/* FAMILY GRID for the main tree view */
+.family-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.family-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow);
+}
+.family-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.family-card .fc-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.family-card .fc-dates {
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+.family-card .fc-role {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-style: italic;
+  margin-top: 4px;
+}
+.family-card .fc-status {
+  margin-top: 8px;
+}
+
+/* FOOTER */
+footer {
+  background: var(--bg-header);
+  color: var(--text-header);
+  text-align: center;
+  padding: 24px 16px;
+  font-size: 0.8rem;
+}
+footer a { color: var(--accent-light); }
+
+/* RESPONSIVE */
+@media (max-width: 600px) {
+  nav ul { gap: 0; }
+  nav li a { padding: 12px 14px; font-size: 0.8rem; }
+  .section { padding: 24px 16px; }
+  .detail-panel { margin: 0; border-radius: var(--radius) var(--radius) 0 0; }
+  .detail-overlay { align-items: flex-end; padding: 0; }
+  .family-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="crest">⚜</div>
+  <h1>de Dominis</h1>
+  <p class="subtitle">Conti Palatini dell'isola di Arbe — dal 1166</p>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#albero" class="active">Albero</a></li>
+    <li><a href="#storia">Storia</a></li>
+    <li><a href="#persone">Persone</a></li>
+    <li><a href="#fonti">Fonti</a></li>
+  </ul>
+</nav>
+
+<section id="albero" class="section">
+  <h2 class="section-title">Albero genealogico — Ramo principale</h2>
+  <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;">Clicca su un nome per vedere la scheda completa.</p>
+  <div class="family-grid" id="familyGrid"></div>
+</section>
+
+<section id="storia" class="section">
+  <h2 class="section-title">Cronologia della famiglia</h2>
+  <div class="timeline" id="timeline"></div>
+</section>
+
+<section id="persone" class="section">
+  <h2 class="section-title">Figure storiche collegate</h2>
+  <div class="family-grid" id="historicalGrid"></div>
+</section>
+
+<section id="fonti" class="section">
+  <h2 class="section-title">Fonti e documenti</h2>
+  <div id="sourcesList"></div>
+</section>
+
+<footer>
+  <p>BackHere.it — Genealogia de Dominis / Garaventa</p>
+  <p style="margin-top:4px;">Ricerca a cura di Marco Antonio Garaventa · Ultimo aggiornamento: ottobre 2026</p>
+</footer>
+
+<!-- DETAIL OVERLAY -->
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-panel">
+    <button class="detail-close" onclick="closeDetail()">&times;</button>
+    <div class="detail-header">
+      <h2 id="detailName"></h2>
+      <div class="dates-line" id="detailDates"></div>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script>
+const persons = [
+  {
+    id: "cristoforo252",
+    name: "Cristoforo de Dominis",
+    ref: "252",
+    dates: "~1835",
+    status: "deceased",
+    role: "Ramo principale",
+    spouse: "Maria Spalatin",
+    generation: 1,
+    bio: "Il cognome Spalatin è attestato come famiglia nobile dalmata, legata a Spalato/Split. Il nome Cristoforo era presente nella famiglia de Dominis già dal XV secolo: un <em>Christophorus Dominis</em> risulta notaio a Rab nei registri 1582-1606, e un <em>Christophorus figlio di Stefano</em> era tra i destinatari del privilegio imperiale del 1437.",
+    research: "amber",
+    researchNote: "Omonimia storica attestata. Nessun risultato diretto.",
+    sources: [
+      { title: "Articolo accademico Univ. Zara (2019)", url: "https://morepress.unizd.hr/journals/index.php/radovidz/en/article/download/1972/2632/4597" }
+    ]
+  },
+  {
+    id: "marcantonio268",
+    name: "Marcantonio de Dominis",
+    ref: "268",
+    dates: "2 settembre 1864 – ?",
+    birthPlace: "Rab",
+    status: "deceased",
+    role: "Conte Palatino",
+    spouse: "Giuseppina Predolin, Nobile di Nona",
+    generation: 2,
+    bio: "Sposò Giuseppina Predolin, della nobiltà di Nona (Nin), Dalmazia. Il legame Dominis-Predolin è confermato dall'articolo di Elisabetta de Dominis (2016), che menziona <strong>Paola Predolin</strong> come cugina e ricercatrice storica della famiglia. Da non confondere con il celebre Marco Antonio de Dominis (1560-1624), arcivescovo di Spalato — il nome Marcantonio era ricorrente nella casata.",
+    research: "amber",
+    researchNote: "Conferma indiretta del legame Dominis-Predolin.",
+    sources: [
+      { title: "La Voce di New York (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/" }
+    ]
+  },
+  {
+    id: "francesco273",
+    name: "Francesco de Dominis",
+    ref: "273",
+    dates: "24 settembre 1907, Sebenico – 1944, Perna",
+    birthPlace: "Sebenico (Šibenik)",
+    deathPlace: "Perna",
+    status: "deceased",
+    role: "Medico specialista — Institut Pasteur, Parigi",
+    spouse: "Nives Rismondo (n. 26 aprile 1914)",
+    spoouseMarriage: "1939",
+    generation: 3,
+    bio: "Medico specialista, lavorò all'Institut Pasteur di Parigi. Morì a Perna nel 1944, in un periodo di violenza in Dalmazia: nello stesso anno, la famiglia de Dominis fu perseguitata dai partigiani titini. Il nonno Giovanni de Dominis fuggì da Arbe a Venezia nel 1943; un cugino fu ucciso.",
+    research: "amber",
+    researchNote: "Nessun risultato diretto. Riferimenti indiretti nel contesto della persecuzione in Dalmazia.",
+    sources: [
+      { title: "ANSA/L'Adige (2026)", url: "https://www.ladige.it/attualita/ansa-la-storia-famiglia-de-dominis-croata-per-zagabria-ma-siamo-italiani-nq9381ay" },
+      { title: "La Voce di New York (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/" }
+    ]
+  },
+  {
+    id: "nives",
+    name: "Nives Rismondo",
+    dates: "26 aprile 1914 – ?",
+    status: "deceased",
+    role: "Moglie di Francesco de Dominis",
+    generation: 3,
+    bio: "Il cognome Rismondo è di origine dalmata-spalatina. Francesco Rismondo (1885-1915) fu un noto irredentista italiano dalmata nato a Spalato, della stessa famiglia.",
+    research: "amber",
+    researchNote: "Nessun risultato diretto. Cognome correlato attestato.",
+    sources: [
+      { title: "Wikipedia — Francesco Rismondo", url: "https://en.wikipedia.org/wiki/Francesco_Rismondo" }
+    ]
+  },
+  {
+    id: "mariarosaria274",
+    name: "Maria Rosaria de Dominis",
+    ref: "274",
+    dates: "22 dicembre 1941, Arbe",
+    birthPlace: "Arbe (Rab)",
+    status: "living",
+    role: "Scrittrice — madre di Greg",
+    spouse: "Franco Garaventa (n. 26 gennaio 1937)",
+    spoouseMarriage: "1965",
+    generation: 4,
+    bio: "Nata ad Arbe (Rab), figlia di Francesco de Dominis e Nives Rismondo. Autrice del romanzo <em>\"Gli oleandri di Marianna\"</em> (non presente nei cataloghi online — possibile pubblicazione locale o autopubblicazione).",
+    research: "red",
+    researchNote: "Nessun risultato online. Il romanzo non compare nei cataloghi.",
+    sources: []
+  },
+  {
+    id: "giovannifrancesco275",
+    name: "Giovanni Francesco de Dominis",
+    ref: "275",
+    dates: "7 aprile 1942, Arbe",
+    birthPlace: "Arbe (Rab)",
+    status: "living",
+    role: "Architetto, artista, professore — Bordeaux",
+    spouse: "Marie Claire Chabesse (n. 30 aprile 1946)",
+    spoouseMarriage: "1981",
+    generation: 4,
+    bio: "Architetto d'interni, artista pittore, professore di arti plastiche a Bordeaux. Autore di: <em>\"Le tarot de Bordeaux\"</em>, <em>\"Venise jumelage en cuisine\"</em>, <em>\"Le Bordeaux magique du tarot\"</em>, <em>\"Dominus ou le tarot\"</em>, <em>\"...et de la paix\"</em>. Nessuno di questi titoli compare nei cataloghi (BNF, OPAC SBN, Goodreads) — possibili autopubblicazioni. Corrisponde allo <strong>\"zio Gianfranco\"</strong>, identificato da Elisabetta de Dominis come cugino residente in Francia.",
+    research: "amber",
+    researchNote: "Solo riferimenti indiretti. Libri non in catalogo.",
+    sources: [
+      { title: "La Voce di New York (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/" }
+    ]
+  },
+  {
+    id: "franco",
+    name: "Franco Garaventa",
+    dates: "26 gennaio 1937",
+    status: "deceased",
+    role: "Padre di Federico, Francesco e Marco Antonio",
+    generation: 4,
+    bio: "Sposò Maria Rosaria de Dominis nel 1965. Padre di tre figli: Federico, Francesco e Marco Antonio. Nel 1954 era socio in costruzioni a Genova con il padre di Sabrina Pontetilla.",
+    research: "red",
+    researchNote: "Nessun risultato. Cognome molto diffuso in Liguria.",
+    sources: []
+  },
+  {
+    id: "federico",
+    name: "Federico Garaventa",
+    dates: "12 aprile 1966",
+    status: "living",
+    role: "Primo dei tre fratelli",
+    spouse: "Paola Castagnino",
+    generation: 5,
+    bio: "Primogenito di Franco Garaventa e Maria Rosaria de Dominis. Sposato con Paola Castagnino, padre di Matilde (n. 31 gennaio 2004, Genova).",
+    research: "red",
+    researchNote: "Nessun risultato online.",
+    sources: [],
+    children: ["Matilde Garaventa (n. 31/01/2004, Genova) — campionessa di vela, laureata in Ingegneria chimica (2026)"]
+  },
+  {
+    id: "francesco_g",
+    name: "Francesco Garaventa",
+    dates: "8 gennaio 1969",
+    status: "living",
+    role: "Secondo dei tre fratelli",
+    spouse: "Simona Liubicich",
+    generation: 5,
+    bio: "Secondogenito di Franco Garaventa e Maria Rosaria de Dominis. Sposato con Simona Liubicich, padre di Gaia (n. 31 marzo 2002).",
+    research: "red",
+    researchNote: "Nessun risultato online.",
+    sources: [],
+    children: ["Gaia Garaventa (n. 31/03/2002)"]
+  },
+  {
+    id: "marcoantonio",
+    name: "Marco Antonio Garaventa",
+    dates: "12 febbraio 1976",
+    birthPlace: "Savona",
+    status: "living",
+    role: "Soccorritore, formatore, scrittore — committente del progetto",
+    spouse: "Sonia Inglese (n. 31 maggio 1978)",
+    generation: 5,
+    bio: `Ultimo dei tre fratelli Garaventa. Vive a Ovada, presta servizio volontario alla Croce Bianca di Savona da 28 anni. Formatore in sicurezza sul lavoro, primo soccorso e antincendio. Agente immobiliare. Autore del libro <em>"Prima della pioggia di luglio"</em>.
+    <h3>Interventi notevoli</h3>
+    <ul>
+    <li><strong>3 parti in ambulanza</strong> — il primo 25 anni fa a Genova; il secondo il 26/04/2025 in centro a Savona; il terzo a Villapiana (Savona) il 01/09/2025. Equipaggio: Loris Rizzello, Giulia Mantovani, Rino Lupo e Marco Antonio Garaventa. (<a href="https://www.ilsecoloxix.it/savona/news/savona-bimba-nasce-in-ambulanza-milite-e-la-terza-volta-che-mi-capita-obya8kl5/" target="_blank">Il Secolo XIX</a>)</li>
+    <li><strong>28/09/2025 — Bagnino folgorato</strong>, Bagni Sirena, Savona. Uomo di 34 anni folgorato da idropulitrice, arresto cardiaco. Garaventa ha eseguito defibrillazione (HeartStart FR3), massaggio cardiaco e ventilazione. ROSC ottenuto. Paziente sopravvissuto. (<a href="https://www.ivg.it/2025/09/savona-eroe-in-spiaggia-bagnino-salva-la-vita-al-34enne-fulminato-da-idropulitrice/" target="_blank">IVG.it</a> · <a href="https://www.lastampa.it/savona/2025/09/30/news/bagnino_folgorato_idropulitrice_savona_inchiesta-15331044/" target="_blank">La Stampa</a>)</li>
+    <li><strong>05/07/2026 — Accoltellamento in spiaggia</strong>, Prolungamento, Savona. Uomo di 37 anni accoltellato all'addome, arresto cardiaco. Intubato e stabilizzato, ROSC ottenuto dall'equipaggio Croce Bianca. Paziente deceduto 4 ore dopo. (<a href="https://www.tuttigiornali.it/savona-uomo-accoltellato-sulla-spiaggia-affollata-e-grave/" target="_blank">TuttiGiornali.it</a>)</li>
+    </ul>`,
+    research: "green",
+    researchNote: "Libro + 3 articoli di stampa trovati.",
+    sources: [
+      { title: "Amazon — Prima della pioggia di luglio", url: "https://www.amazon.it/Prima-pioggia-luglio-Antonio-Garaventa/dp/B0997X9MKX" },
+      { title: "Il Secolo XIX — Parto in ambulanza (01/09/2025)", url: "https://www.ilsecoloxix.it/savona/news/savona-bimba-nasce-in-ambulanza-milite-e-la-terza-volta-che-mi-capita-obya8kl5/" },
+      { title: "IVG.it — Bagnino folgorato (09/2025)", url: "https://www.ivg.it/2025/09/savona-eroe-in-spiaggia-bagnino-salva-la-vita-al-34enne-fulminato-da-idropulitrice/" },
+      { title: "La Stampa — Si è svegliato (30/09/2025)", url: "https://www.lastampa.it/savona/2025/09/30/news/bagnino_folgorato_idropulitrice_savona_inchiesta-15331044/" },
+      { title: "TuttiGiornali.it — Accoltellamento (05/07/2026)", url: "https://www.tuttigiornali.it/savona-uomo-accoltellato-sulla-spiaggia-affollata-e-grave/" }
+    ],
+    children: ["Alessandro Garaventa (n. 11/05/2007)"]
+  }
+];
+
+const historicalPersons = [
+  {
+    id: "mad1560",
+    name: "Marco Antonio de Dominis",
+    dates: "1560, Rab – 7 settembre 1624, Roma",
+    status: "historical",
+    role: "Arcivescovo di Spalato, scienziato",
+    bio: "Nato a Rab nel 1560 da famiglia nobile dalmata (in lingua locale <em>\"Domnianich\"</em>). Arcivescovo di Spalato, poi convertito al protestantesimo a Londra, infine ritornato a Roma. Morto in Castel Sant'Angelo. Il suo corpo fu bruciato in Campo de' Fiori il 20-21 dicembre 1624. Figura di spicco della famiglia, il suo nome fu tramandato di generazione in generazione.",
+    sources: [
+      { title: "Wikipedia", url: "https://en.wikipedia.org/wiki/Marco_Antonio_de_Dominis" },
+      { title: "Catholic Encyclopedia", url: "https://www.newadvent.org/cathen/05113b.htm" }
+    ]
+  },
+  {
+    id: "john1796",
+    name: "Girolamo \"John\" de Dominis",
+    dates: "1796, Arbe – 1846 (disperso in mare)",
+    status: "historical",
+    role: "Capitano, carbonaro, costruttore di Washington Place",
+    bio: "Figlio del conte Vincenzo de Dominis. Fuggito dalla polizia austriaca come carbonaro, raggiunse Boston nel 1817. Comandò il brigantino <em>Owhyhee</em> nel Pacifico. Si trasferì alle Hawaii nel 1837. Costruì <strong>Washington Place</strong> a Honolulu (oggi residenza del governatore delle Hawaii). Scomparso in mare nel 1846 sulla rotta per la Cina.",
+    sources: [
+      { title: "La Voce di New York (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/" }
+    ]
+  },
+  {
+    id: "johnowen",
+    name: "John Owen Dominis",
+    dates: "10 marzo 1832, Schenectady NY – 27 agosto 1891, Honolulu",
+    status: "historical",
+    role: "Principe consorte delle Hawaii",
+    spouse: "Regina Liliuokalani (m. 16 settembre 1862)",
+    bio: "Figlio di John Dominis e Mary Lambert Jones. Discendente dei <em>\"Conti Palatini de Dominis de Arba\"</em>. Sposò la principessa Lydia Kapaʻiahu, futura e ultima regina delle Hawaii, con il nome di <strong>Liliuokalani</strong>.",
+    sources: [
+      { title: "Wikipedia", url: "https://en.wikipedia.org/wiki/John_Owen_Dominis" }
+    ]
+  },
+  {
+    id: "elisabetta",
+    name: "Elisabetta de Dominis",
+    dates: "Contemporanea",
+    status: "living",
+    role: "Giornalista, scrittrice — La Voce di New York",
+    bio: "Giornalista e scrittrice italiana, collabora con La Voce di New York dal 2011. Il suo nonno Giovanni de Dominis fuggì da Arbe a Venezia nel 1943 per sfuggire ai partigiani di Tito. Ha protestato pubblicamente contro la Croazia per la rivendicazione di nazionalità croata di John Owen Dominis. Chiama <strong>Gianfranco Dominis</strong> (lo zio di Greg) \"cugino\". Menziona anche la cugina <strong>Paola Predolin</strong> e il cugino <strong>Dragomir de Dominis</strong> (consigliere dell'imperatore Francesco Giuseppe, a Zara). <em>Posizione esatta nell'albero da verificare.</em>",
+    sources: [
+      { title: "ANSA/L'Adige (2026)", url: "https://www.ladige.it/attualita/ansa-la-storia-famiglia-de-dominis-croata-per-zagabria-ma-siamo-italiani-nq9381ay" },
+      { title: "La Voce di New York (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/" }
+    ]
+  }
+];
+
+const timelineData = [
+  { year: "1166", text: "Primo documento attestante la famiglia de Dominis attraverso il fondatore <strong>Diminja</strong>, già nel consiglio di Rab." },
+  { year: "1215", text: "<strong>\"Frangipane sive de Dominis\"</strong> — il capostipite citato nell'albero genealogico." },
+  { year: "1437", text: "L'imperatore Sigismondo concede a Praga il privilegio di <strong>Conti Palatini</strong> a Ivan Dominis (vescovo di Segna) e ai fratelli Christophorus, Stefano, Damiano e Grisogono." },
+  { year: "1560", text: "Nasce <strong>Marco Antonio de Dominis</strong> a Rab. Diventerà arcivescovo di Spalato, scienziato e teologo." },
+  { year: "1571", text: "<strong>Giovanni de Dominis</strong> comanda le galee dalmate nella battaglia di Lepanto." },
+  { year: "1624", text: "Marco Antonio de Dominis muore a Roma (Castel Sant'Angelo). Il suo corpo viene bruciato in Campo de' Fiori." },
+  { year: "1796", text: "Nasce <strong>Girolamo \"John\" de Dominis</strong> ad Arbe. Carbonaro, fuggirà in America." },
+  { year: "1817", text: "John Dominis raggiunge Boston, inizia la sua carriera di capitano nel Pacifico." },
+  { year: "~1835", text: "<strong>Cristoforo de Dominis</strong> sposa <strong>Maria Spalatin</strong>." },
+  { year: "1837", text: "John Dominis si trasferisce alle Hawaii. Costruisce Washington Place a Honolulu." },
+  { year: "1862", text: "<strong>John Owen Dominis</strong> sposa la principessa Lydia (futura regina Liliuokalani)." },
+  { year: "1864", text: "Nasce <strong>Marcantonio de Dominis</strong>, che sposerà Giuseppina Predolin, Nobile di Nona." },
+  { year: "1829", text: "La famiglia cerca conferma della nobiltà dalla commissione araldica austriaca ma non può produrre il documento originale del 1437." },
+  { year: "1907", text: "Nasce <strong>Francesco de Dominis</strong> a Sebenico. Diventerà medico specialista all'Institut Pasteur di Parigi." },
+  { year: "1941", text: "Nasce <strong>Maria Rosaria de Dominis</strong> ad Arbe." },
+  { year: "1942", text: "Nasce <strong>Giovanni Francesco de Dominis</strong> ad Arbe." },
+  { year: "1943", text: "Il nonno Giovanni de Dominis fugge da Arbe a Venezia, ricercato dai partigiani titini. La famiglia perde tutte le proprietà." },
+  { year: "1944", text: "<strong>Francesco de Dominis</strong> muore a Perna. Un cugino viene ucciso." },
+  { year: "1976", text: "Nasce <strong>Marco Antonio Garaventa</strong>, ultimo dei tre fratelli, committente di questo progetto genealogico." },
+  { year: "2025", text: "Marco Antonio Garaventa assiste il terzo parto in ambulanza e salva la vita a un 34enne folgorato eseguendo defibrillazione e ROSC." },
+  { year: "2026", text: "Avvio del progetto <strong>BackHere</strong> — ricostruzione dell'albero genealogico de Dominis." }
+].sort((a,b) => {
+  const ya = parseInt(a.year.replace(/[^0-9]/g,'')) || 0;
+  const yb = parseInt(b.year.replace(/[^0-9]/g,'')) || 0;
+  return ya - yb;
+});
+
+const allSources = [
+  { title: "ANSA/L'Adige — La famiglia de Dominis (2026)", url: "https://www.ladige.it/attualita/ansa-la-storia-famiglia-de-dominis-croata-per-zagabria-ma-siamo-italiani-nq9381ay", desc: "Elisabetta de Dominis protesta contro la rivendicazione croata su John Owen Dominis. Storia completa della famiglia dal 1215." },
+  { title: "La Voce di New York — La storia straordinaria di un italiano nel Pacifico (2016)", url: "https://lavocedinewyork.com/arts/2016/07/16/la-storia-straordinaria-un-italiano-nel-pacifico/", desc: "Di Elisabetta de Dominis. Ricostruzione del viaggio di John Dominis da Arbe alle Hawaii." },
+  { title: "Università di Zara — Privilegi nobiliari de Dominis (2019)", url: "https://morepress.unizd.hr/journals/index.php/radovidz/en/article/download/1972/2632/4597", desc: "Articolo accademico sul privilegio di Conti Palatini concesso nel 1437." },
+  { title: "Wikipedia — Marco Antonio de Dominis", url: "https://en.wikipedia.org/wiki/Marco_Antonio_de_Dominis", desc: "Arcivescovo di Spalato (1560-1624), scienziato e teologo." },
+  { title: "Wikipedia — John Owen Dominis", url: "https://en.wikipedia.org/wiki/John_Owen_Dominis", desc: "Principe consorte delle Hawaii (1832-1891)." },
+  { title: "Il Secolo XIX — Parto in ambulanza (01/09/2025)", url: "https://www.ilsecoloxix.it/savona/news/savona-bimba-nasce-in-ambulanza-milite-e-la-terza-volta-che-mi-capita-obya8kl5/", desc: "Marco Antonio Garaventa assiste il terzo parto in ambulanza con la Croce Bianca Savona." },
+  { title: "IVG.it — Bagnino folgorato (09/2025)", url: "https://www.ivg.it/2025/09/savona-eroe-in-spiaggia-bagnino-salva-la-vita-al-34enne-fulminato-da-idropulitrice/", desc: "Salvataggio ai Bagni Sirena: ROSC ottenuto su 34enne in arresto cardiaco da folgorazione." },
+  { title: "La Stampa — Si è svegliato (30/09/2025)", url: "https://www.lastampa.it/savona/2025/09/30/news/bagnino_folgorato_idropulitrice_savona_inchiesta-15331044/", desc: "Il 34enne folgorato ai Bagni Sirena sopravvive." },
+  { title: "TuttiGiornali.it — Accoltellamento in spiaggia (05/07/2026)", url: "https://www.tuttigiornali.it/savona-uomo-accoltellato-sulla-spiaggia-affollata-e-grave/", desc: "Intervento Croce Bianca Savona: accoltellamento con arresto cardiaco al Prolungamento." },
+  { title: "Mlacović — The nobility and the island (2012)", url: "https://leykam-international.hr/publikacija/103", desc: "Studio sulla nobiltà medievale di Rab." },
+  { title: "Wikipedia — Francesco Rismondo", url: "https://en.wikipedia.org/wiki/Francesco_Rismondo", desc: "Irredentista dalmata (1885-1915), cognome correlato a Nives Rismondo." }
+];
+
+// Render
+function renderFamilyGrid() {
+  const grid = document.getElementById('familyGrid');
+  grid.innerHTML = persons.map(p => {
+    const statusClass = p.research === 'green' ? 'tag-green' : p.research === 'amber' ? 'tag-amber' : 'tag-red';
+    const statusLabel = p.research === 'green' ? '✅ Documentato' : p.research === 'amber' ? '⚠️ Parziale' : '❌ Non trovato';
+    return `<div class="family-card" onclick="openDetail('${p.id}','main')">
+      <div class="fc-name">${p.name}</div>
+      <div class="fc-dates">${p.dates}</div>
+      ${p.role ? `<div class="fc-role">${p.role}</div>` : ''}
+      <div class="fc-status"><span class="tag ${statusClass}">${statusLabel}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderHistoricalGrid() {
+  const grid = document.getElementById('historicalGrid');
+  grid.innerHTML = historicalPersons.map(p => {
+    return `<div class="family-card" onclick="openDetail('${p.id}','hist')">
+      <div class="fc-name">${p.name}</div>
+      <div class="fc-dates">${p.dates}</div>
+      ${p.role ? `<div class="fc-role">${p.role}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderTimeline() {
+  const tl = document.getElementById('timeline');
+  tl.innerHTML = timelineData.map(t => `
+    <div class="timeline-item">
+      <div class="timeline-year">${t.year}</div>
+      <div class="timeline-text">${t.text}</div>
+    </div>
+  `).join('');
+}
+
+function renderSources() {
+  const sl = document.getElementById('sourcesList');
+  sl.innerHTML = allSources.map(s => `
+    <div class="source-item">
+      <div class="source-title">${s.title}</div>
+      <a class="source-url" href="${s.url}" target="_blank">${s.url}</a>
+      <div class="source-desc">${s.desc}</div>
+    </div>
+  `).join('');
+}
+
+function openDetail(id, type) {
+  const list = type === 'main' ? persons : historicalPersons;
+  const p = list.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('detailName').textContent = p.name;
+  document.getElementById('detailDates').textContent = p.dates;
+  let html = '';
+  if (p.spouse) html += `<h3>Coniuge</h3><p>${p.spouse}${p.spoouseMarriage ? ' (m. ' + p.spoouseMarriage + ')' : ''}</p>`;
+  if (p.birthPlace) html += `<p><strong>Luogo di nascita:</strong> ${p.birthPlace}</p>`;
+  if (p.deathPlace) html += `<p><strong>Luogo di morte:</strong> ${p.deathPlace}</p>`;
+  html += `<h3>Biografia</h3><div>${p.bio}</div>`;
+  if (p.children && p.children.length) {
+    html += `<h3>Figli</h3><ul>${p.children.map(c => `<li>${c}</li>`).join('')}</ul>`;
+  }
+  if (p.researchNote) {
+    const cls = p.research === 'green' ? 'tag-green' : p.research === 'amber' ? 'tag-amber' : 'tag-red';
+    html += `<h3>Stato ricerca</h3><p><span class="tag ${cls}">${p.researchNote}</span></p>`;
+  }
+  if (p.sources && p.sources.length) {
+    html += `<h3>Fonti</h3><ul>${p.sources.map(s => `<li><a href="${s.url}" target="_blank">${s.title}</a></li>`).join('')}</ul>`;
+  }
+  document.getElementById('detailBody').innerHTML = html;
+  document.getElementById('detailOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('detailOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeDetail();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeDetail();
+});
+
+// Nav
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', function() {
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// Init
+renderFamilyGrid();
+renderHistoricalGrid();
+renderTimeline();
+renderSources();
+</script>
+
+</body>
+</html>
