@@ -229,7 +229,7 @@ const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.
 /* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
   nodeW: 150, nodeH: 44, coupleGap: 30,
-  sibGap: 16, subGap: 16, bandGap: 24, cols: 10, bandYears: 1,
+  sibGap: 16, rowH: 130, forestGap: 80,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
 
@@ -292,14 +292,15 @@ function getChildren(id) {
   return all;
 }
 
-/* Vertical genealogical table, rules taken from the physical panel:
-   R1. Vertical axis = birth year: older at the top, younger below.
-   R2. Same 25-year band = same height (tolerance 25 years).
-   R3. Children always sit in a band below their parents.
-   R4. Siblings and spouses are adjacent (same band, consecutive columns).
-   R5. Within a band, boxes fill columns left to right; a band wraps into
-       sub-rows when it is full, keeping the table portrait like the panel.
-   R6. No two boxes overlap (one grid cell per box). */
+/* Classic genealogical tree. Rules:
+   R1. One row per generation: children always one row below their parents.
+   R2. Siblings sit side by side on the same row, oldest on the left.
+   R3. A spouse from another family sits beside the blood member, outside the
+       sibling group (first child's spouse on the left, the others on the right),
+       joined by a short tie line.
+   R4. From the middle of the tie a trunk goes down to a bus line; from the bus
+       a vertical drop reaches each child (the blood member, never the spouse).
+   R5. The couple is centred over its children; no two boxes overlap. */
 function buildUnitTree(rootId, placed) {
   placed.add(rootId);
   const members = [rootId];
@@ -309,69 +310,62 @@ function buildUnitTree(rootId, placed) {
   for (const c of getChildren(rootId)) {
     if (!placed.has(c)) children.push(buildUnitTree(c, placed));
   }
-  return { members, children };
+  return { members, children, bloodIdx: 0 };
 }
 
-/* R1/R2: raw band index from birth year (25-year bands) */
-let PANEL_MIN_YEAR = 1100;
-function rawBand(id) {
-  const y = estYears[id];
-  if (!y) return null;
-  return Math.floor((y - PANEL_MIN_YEAR) / CONF.bandYears);
+const unitOwnW = u => u.members.length * CONF.nodeW + (u.members.length - 1) * CONF.coupleGap;
+
+function measureUnit(u, spouseLeft) {
+  if (spouseLeft && u.members.length > 1) { u.members = [u.members[1], u.members[0]]; u.bloodIdx = 1; }
+  const own = unitOwnW(u);
+  const half = CONF.nodeW / 2;
+  const bloodOff = u.bloodIdx * (CONF.nodeW + CONF.coupleGap) + half;
+  if (!u.children.length) { u.ownX = 0; u.childX0 = 0; u.w = own; u.bloodCx = bloodOff; u.offs = []; return; }
+  const n = u.children.length;
+  let x = 0; u.offs = [];
+  u.children.forEach((c, i) => {
+    measureUnit(c, n > 1 && i === 0);
+    u.offs.push(x);
+    x += c.w + CONF.sibGap;
+  });
+  const childrenW = x - CONF.sibGap;
+  const first = u.offs[0] + u.children[0].bloodCx;
+  const last = u.offs[n - 1] + u.children[n - 1].bloodCx;
+  const mid = (first + last) / 2;
+  const ownLeft = mid - own / 2;
+  const left = Math.min(0, ownLeft);
+  u.ownX = ownLeft - left;
+  u.childX0 = -left;
+  u.w = Math.max(childrenW, ownLeft + own) - left;
+  u.bloodCx = u.ownX + bloodOff;
+}
+
+function placeUnit(u, left, depth, pos) {
+  const y = depth * CONF.rowH;
+  u.members.forEach((m, i) => {
+    pos[m] = { x: left + u.ownX + i * (CONF.nodeW + CONF.coupleGap), y, w: CONF.nodeW };
+  });
+  u.children.forEach((c, i) => placeUnit(c, left + u.childX0 + u.offs[i], depth + 1, pos));
 }
 
 function layoutForest() {
-  const withYear = Object.keys(estYears).map(k => estYears[k]).filter(Boolean);
-  PANEL_MIN_YEAR = withYear.length ? Math.min(...withYear) : 1100;
-
+  const allPos = {};
   const placed = new Set();
-  const order = [];      // DFS order of persons: families stay together
-  const bandOf = {};     // person -> band index (R1, R3)
-  const parentOf = {};
-  const walk = (u, parentBand, parentRep) => {
-    let b = null;
-    for (const m of u.members) { const rb = rawBand(m); if (rb !== null) { b = rb; break; } }
-    if (b === null) b = parentBand === null ? 0 : parentBand + 1;          // R3 fallback
-    if (parentBand !== null && b <= parentBand) b = parentBand + 1;         // R3
-    for (const m of u.members) { bandOf[m] = b; order.push(m); if (parentRep) parentOf[m] = parentRep; }
-    for (const c of u.children) walk(c, b, u.members[0]);
-  };
-
   const rootNodes = DATA.persons.filter(p =>
     !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
+  let cursor = 0;
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
-    walk(buildUnitTree(rp.id, placed), null, null);
+    const u = buildUnitTree(rp.id, placed);
+    measureUnit(u, false);
+    let depth0 = 0;
+    for (const m of u.members) for (const c of getChildren(m)) {
+      if (allPos[c]) depth0 = Math.max(depth0, Math.round(allPos[c].y / CONF.rowH) - 1);
+    }
+    placeUnit(u, cursor, depth0, allPos);
+    cursor += u.w + CONF.forestGap;
   }
-
-  // Compact the used bands into consecutive rows (empty years take no height)
-  const usedBands = [...new Set(Object.values(bandOf))].sort((a, b) => a - b);
-  const rowOfBand = {};
-  usedBands.forEach((b, i) => { rowOfBand[b] = i; });
-
-  const rows = usedBands.map(() => []);
-  for (const id of order) rows[rowOfBand[bandOf[id]]].push(id);
-
-  const allPos = {};
-  let y = 0;
-  rows.forEach(list => {
-    let prevRight = -CONF.sibGap;
-    list.forEach((id, i) => {
-      const par = parentOf[id];
-      const pp = par && allPos[par];
-      let x;
-      if (i > 0 && coupleMap[id] === list[i - 1]) {
-        x = prevRight + CONF.coupleGap;                         // spouse: next to partner
-      } else {
-        const want = pp ? pp.x + CONF.nodeW / 2 - CONF.nodeW / 2 : null; // centre under parent
-        x = Math.max(want === null ? 0 : want, prevRight + CONF.sibGap);
-      }
-      allPos[id] = { x, y, w: CONF.nodeW };
-      prevRight = x + CONF.nodeW;
-    });
-    y += CONF.nodeH + CONF.bandGap + CONF.subGap;
-  });
   return allPos;
 }
 
@@ -414,35 +408,70 @@ function renderSvgTree() {
   };
   const FAM_COLORS = ['#b23a3a','#2f6f9f','#3a7d44','#8a4fa0','#c97a1e','#1f8a85','#7a5c2e','#c2407a'];
   let famIdx = 0;
-  const mkLine = (x1, y1, x2, y2, col) => {
-    const l = document.createElementNS(SVG_NS, 'line');
-    l.setAttribute('x1', x1); l.setAttribute('y1', y1);
-    l.setAttribute('x2', x2); l.setAttribute('y2', y2);
-    l.setAttribute('stroke', col || lineColor); l.setAttribute('stroke-width', '1.5');
-    g.appendChild(l);
-  };
+  const segs = [];   // {f, col, x1,y1,x2,y2}
+  const addSeg = (f, col, x1, y1, x2, y2) => segs.push({ f, col, x1, y1, x2, y2 });
+  const fams = [];
   const doneParent = new Set();
   for (const id in allPos) {
     if (doneParent.has(id)) continue;
     const sp = coupleMap[id];
     doneParent.add(id);
     if (sp) doneParent.add(sp);
-    const fam = FAM_COLORS[famIdx++ % FAM_COLORS.length];
-    if (sp && allPos[sp] && allPos[sp].y === allPos[id].y) {
+    const f = ++famIdx, col = FAM_COLORS[f % FAM_COLORS.length];
+    const coupled = sp && allPos[sp] && allPos[sp].y === allPos[id].y;
+    if (coupled) {
       const a = allPos[id], b = allPos[sp];
       const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
-      mkLine(left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2, fam);
+      addSeg(f, col, left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2);
     }
     const ch = getChildren(id).filter(c => allPos[c]);
     if (!ch.length) continue;
     const pc = centreOf(id);
-    const dropY = pc.y + CONF.nodeH / 2;
-    const cs = ch.map(c => centreOf(c));
-    const busY = pc.y + CONF.nodeH + 14;
-    const xs = cs.map(c => c.cx).concat([pc.cx]);
-    mkLine(pc.cx, dropY, pc.cx, busY, fam);
-    mkLine(Math.min(...xs), busY, Math.max(...xs), busY, fam);
-    for (const c of cs) mkLine(c.cx, busY, c.cx, c.y, fam);
+    const cxs = ch.map(c => allPos[c].x + CONF.nodeW / 2);   // blood child, never the spouse
+    const xs = cxs.concat([pc.cx]);
+    fams.push({ f, col, pc, ch, cxs, coupled, lo: Math.min(...xs), hi: Math.max(...xs), lane: 0 });
+  }
+  /* Bus lanes: families on the same row whose buses would overlap get different heights */
+  const byRow = {};
+  fams.forEach(F => (byRow[F.pc.y] = byRow[F.pc.y] || []).push(F));
+  for (const y in byRow) {
+    const list = byRow[y].sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo));
+    const lanes = [];
+    for (const F of list) {
+      let l = 0;
+      while (lanes[l] && lanes[l].some(o => o.lo < F.hi + 4 && F.lo < o.hi + 4)) l++;
+      (lanes[l] = lanes[l] || []).push(F); F.lane = l;
+    }
+  }
+  for (const F of fams) {
+    const busY = F.pc.y + CONF.nodeH + 12 + F.lane * 8;
+    const dropY = F.coupled ? F.pc.y + CONF.nodeH / 2 : F.pc.y + CONF.nodeH;
+    addSeg(F.f, F.col, F.pc.cx, dropY, F.pc.cx, busY);
+    addSeg(F.f, F.col, F.lo, busY, F.hi, busY);
+    F.ch.forEach((c, i) => addSeg(F.f, F.col, F.cxs[i], busY, F.cxs[i], allPos[c].y));
+  }
+  /* Draw; a horizontal line that crosses another family's vertical line is broken for a short gap */
+  const GAP = 4;
+  const mkLine = (s, x1, y1, x2, y2) => {
+    const l = document.createElementNS(SVG_NS, 'line');
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+    l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    l.setAttribute('stroke', s.col); l.setAttribute('stroke-width', '1.5');
+    l.setAttribute('data-fam', s.f);
+    g.appendChild(l);
+  };
+  const verts = segs.filter(s => s.x1 === s.x2);
+  for (const s of segs) {
+    if (s.x1 === s.x2) { mkLine(s, s.x1, s.y1, s.x2, s.y2); continue; }
+    const a = Math.min(s.x1, s.x2), b = Math.max(s.x1, s.x2), y = s.y1;
+    const cuts = verts.filter(v => v.f !== s.f && v.x1 > a + 0.5 && v.x1 < b - 0.5 &&
+        Math.min(v.y1, v.y2) < y - 0.5 && Math.max(v.y1, v.y2) > y + 0.5).map(v => v.x1).sort((p, q) => p - q);
+    let from = a;
+    for (const cx of cuts) {
+      if (cx - GAP > from) mkLine(s, from, y, cx - GAP, y);
+      from = Math.max(from, cx + GAP);
+    }
+    if (b > from) mkLine(s, from, y, b, y);
   }
 
   /* Nodes (panel style) */
