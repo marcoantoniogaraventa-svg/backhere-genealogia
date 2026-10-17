@@ -283,51 +283,48 @@ function buildCoupleMap() {
 const coupleMap = buildCoupleMap();
 const estYears = estimateYears();
 
-/* Generation filter: generation 0 = the most recent ~28 years, 1 = the 28 before, ...
-   The selector shows the N most recent generations (default 3), or all of them. */
-const GEN_YEARS = 28;
+/* Generation filter, centred on a focus person (default Marco Antonio):
+   with N generations it shows N generations up (direct ancestors) and N down (direct descendants),
+   the siblings of the focus and of the ancestors (zii), and all spouses. "Tutte" shows everything. */
 let genLimit = 3;
-const MAX_YEAR = Math.max(...Object.values(estYears).filter(Boolean));
-const genOf = id => estYears[id] ? Math.floor((MAX_YEAR - estYears[id]) / GEN_YEARS) : 999;
-/* Closure: besides the selected generations, also show parents, their siblings, siblings and spouses of the shown people */
+let focusId = 'marco-antonio';
 const _parents = {};
 for (const r of DATA.relations) if (r.type === 'genitore') (_parents[r.to] = _parents[r.to] || []).push(r.from);
 const _sibs = id => { const o = new Set(); for (const pa of _parents[id] || []) for (const c of (kids[pa] || [])) if (c !== id) o.add(c); return o; };
 let _visCache = null;
-const pinned = new Set();   // people opened from outside the selected generations: only their line down to the present is added
 function _visSet() {
-  if (_visCache && _visCache.lim === genLimit && _visCache.pin === pinned.size) return _visCache.set;
-  const base = DATA.persons.map(p => p.id).filter(id => genOf(id) < genLimit);
-  const set = new Set(base);
-  for (const id of base) {
-    for (const s of _sibs(id)) set.add(s);
-    for (const pa of _parents[id] || []) { set.add(pa); for (const s of _sibs(pa)) set.add(s); for (const gp of _parents[pa] || []) { set.add(gp); for (const g2 of _parents[gp] || []) { set.add(g2); if (coupleMap[g2]) set.add(coupleMap[g2]); } } if (coupleMap[pa]) set.add(coupleMap[pa]); }
-    if (coupleMap[id]) set.add(coupleMap[id]);
+  if (_visCache && _visCache.lim === genLimit && _visCache.f === focusId) return _visCache.set;
+  const set = new Set([focusId]);
+  const ups = [[focusId, 0]];
+  const seenUp = new Set([focusId]);
+  while (ups.length) {                       // direct ancestors, N levels
+    const [id, lv] = ups.shift();
+    if (lv >= genLimit) continue;
+    for (const pa of _parents[id] || []) if (!seenUp.has(pa)) { seenUp.add(pa); set.add(pa); ups.push([pa, lv + 1]); }
+  }
+  const downs = [[focusId, 0]];
+  const seenDn = new Set([focusId]);
+  while (downs.length) {                     // direct descendants, N levels
+    const [id, lv] = downs.shift();
+    if (lv >= genLimit) continue;
+    for (const c of [...(kids[id] || []), ...(coupleMap[id] ? kids[coupleMap[id]] || [] : [])]) if (!seenDn.has(c)) { seenDn.add(c); set.add(c); downs.push([c, lv + 1]); }
+  }
+  // siblings of the focus and of the ancestors whose parents are also shown
+  for (const id of [...set]) if (id === focusId || seenUp.has(id)) {
+    const parentsShown = (_parents[id] || []).some(pa => set.has(pa));
+    if (parentsShown) for (const sb of _sibs(id)) set.add(sb);
   }
   for (const id of [...set]) if (coupleMap[id]) set.add(coupleMap[id]);
-  if (pinned.size) {
-    // ancestors of everyone shown by the generation filter = the line that leads to the present
-    const anc = new Set(set);
-    const up = id => { for (const pa of _parents[id] || []) if (!anc.has(pa)) { anc.add(pa); up(pa); } };
-    for (const id of base) up(id);
-    for (const pid of pinned) {
-      const add = x => { if (x) set.add(x); };
-      add(pid); add(coupleMap[pid]);
-      for (const pa of _parents[pid] || []) { add(pa); add(coupleMap[pa]); }
-      for (const sb of _sibs(pid)) add(sb);
-      const down = id => { for (const c of kids[id] || []) if (anc.has(c) && !set.has(c)) { set.add(c); add(coupleMap[c]); down(c); } };
-      down(pid); if (coupleMap[pid]) down(coupleMap[pid]);
-    }
-  }
-  _visCache = { lim: genLimit, pin: pinned.size, set };
+  _visCache = { lim: genLimit, f: focusId, set };
   return set;
 }
 const visible = id => genLimit === Infinity || _visSet().has(id);
 function setGens(v) {
   genLimit = v === 'all' ? Infinity : +v;
-  pinned.clear(); _visCache = null;
+  _visCache = null;
   document.getElementById('gens').value = v;
 }
+function setFocus(id) { focusId = id; _visCache = null; }
 
 /* Get children sorted by birth year */
 function getChildren(id) {
@@ -674,7 +671,11 @@ function renderSvgTree() {
       ng.appendChild(spt);
     }
 
-    if (!p.group) ng.addEventListener('click', () => openP(id));
+    if (!p.group) {
+      let t = null;   // one click = open the card (after a short wait); double click = centre the tree on this person
+      ng.addEventListener('click', () => { clearTimeout(t); t = setTimeout(() => openP(id), 260); });
+      ng.addEventListener('dblclick', () => { clearTimeout(t); closeP(); centerOn(id); });
+    }
     g.appendChild(ng);
   }
 
@@ -752,7 +753,7 @@ function fitAll() {
 
 function centerOn(id) {
   sel = id;
-  if (!visible(id)) { pinned.add(id); _visCache = null; }   // a person outside the selected generations: add only the line from them to the present
+  setFocus(id);   // the tree is centred on this person: the selected generations are counted from them
   renderSvgTree();
   const pos = nodePositions[id];
   if (!pos) return;
@@ -805,7 +806,7 @@ function findPerson(v){
   return DATA.persons.find(x=>label(x).toLowerCase()===v) || DATA.persons.find(x=>x.name.toLowerCase().includes(v) || (x.aliases||[]).some(a=>a.toLowerCase().includes(v)));
 }
 document.getElementById('q').onchange=e=>{ const p=findPerson(e.target.value); if(p){ centerOn(p.id); openP(p.id);} };
-document.getElementById('mine').onclick=()=>{ sel='marco-antonio'; renderSvgTree(); centerOn('marco-antonio'); };
+document.getElementById('mine').onclick=()=>{ sel='marco-antonio'; centerOn('marco-antonio'); };
 document.getElementById('fitAll').onclick=()=>{ setGens('all'); renderSvgTree(); fitAll(); };
 document.getElementById('gens').onchange=e=>{ setGens(e.target.value); renderSvgTree(); };
 
