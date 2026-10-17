@@ -298,7 +298,8 @@ function getChildren(id) {
 function layoutTree(rootId) {
   const pos = {};
   const visited = new Set();
-  let nextY = 0; // track Y to avoid overlaps
+  const nextYByDepth = {}; // track Y to avoid overlaps, PER COLUMN (depth) so a deep
+                            // branch doesn't push down unrelated siblings in other columns
 
   // Find minimum year in this tree
   function collectIds(id, acc) {
@@ -327,14 +328,16 @@ function layoutTree(rootId) {
 
     const x = depth * CONF.indent;
     let yTarget = yearToY(id);
-    // Ensure no vertical overlap with previous node
-    if (yTarget < nextY) yTarget = nextY;
+    // Ensure no vertical overlap with the previous node in THIS column only —
+    // a deep descendant chain must not push down unrelated siblings at this depth.
+    const colNextY = nextYByDepth[depth] || 0;
+    if (yTarget < colNextY) yTarget = colNextY;
 
     pos[id] = { x, y: yTarget, w: CONF.nodeW };
     if (sp && P[sp]) {
       pos[sp] = { x: x + CONF.nodeW + CONF.coupleGap, y: yTarget, w: CONF.nodeW };
     }
-    nextY = yTarget + CONF.minYGap;
+    nextYByDepth[depth] = yTarget + CONF.minYGap;
 
     const ch = getChildren(id);
     for (const c of ch) {
