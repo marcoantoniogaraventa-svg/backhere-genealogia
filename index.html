@@ -226,9 +226,10 @@ const spouseNames = p => (spouses[p.id]||[]).map(r=> r.to ? (P[r.to]?.name||'') 
 const statusOf = p => (p.validation==='verde'||p.research?.status==='verde') ? 'verde' : (p.research?.status||p.validation);
 const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.bio));
 
-/* ---------- SVG Tree Layout Engine ---------- */
+/* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
-  nodeW: 200, nodeH: 70, hGap: 30, vGap: 80, coupleGap: 12,
+  nodeW: 160, nodeH: 44, indent: 50, coupleGap: 6,
+  pixPerYear: 6, minYGap: 52,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
 
@@ -236,154 +237,146 @@ let sel = 'marco-antonio';
 const nodePositions = {};
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/* --- Build couple map: for each person, find their primary spouse --- */
-function buildCoupleMap() {
-  const coupleMap = {}; // personId -> spouseId
-  const seen = new Set();
-  for (const r of DATA.relations) {
-    if (r.type !== 'coniuge') continue;
-    if (!P[r.from] || !P[r.to]) continue;
-    if (seen.has(r.from) || seen.has(r.to)) continue;
-    coupleMap[r.from] = r.to;
-    coupleMap[r.to] = r.from;
-    seen.add(r.from);
-    seen.add(r.to);
-  }
-  return coupleMap;
-}
-
-const coupleMap = buildCoupleMap();
-
-/* Get children of a person, sorted by birth year */
-function getChildren(id) {
-  const ch = kids[id] || [];
-  // Also include children of spouse
-  const sp = coupleMap[id];
-  const spCh = sp ? (kids[sp] || []) : [];
-  const all = [...new Set([...ch, ...spCh])];
-  all.sort((a, b) => {
-    const ya = extractYear(P[a]?.birth);
-    const yb = extractYear(P[b]?.birth);
-    if (ya && yb) return ya - yb;
-    if (ya) return -1;
-    if (yb) return 1;
-    return 0;
-  });
-  return all;
-}
-
 function extractYear(d) {
   if (!d) return null;
   const m = String(d).match(/(\d{4})/);
   return m ? parseInt(m[1]) : null;
 }
 
-/* Layout tree: each "unit" is either a couple (person+spouse) or a single person.
-   Children hang below from the center of the unit. */
+/* Estimate birth years for persons without dates */
+function estimateYears() {
+  const years = {};
+  for (const p of DATA.persons) { const y = extractYear(p.birth); if (y) years[p.id] = y; }
+  for (let pass = 0; pass < 12; pass++) {
+    for (const p of DATA.persons) {
+      if (years[p.id]) continue;
+      const ch = kids[p.id] || [];
+      const chY = ch.map(c => years[c]).filter(Boolean);
+      if (chY.length) { years[p.id] = Math.min(...chY) - 28; continue; }
+      const par = parents[p.id] || [];
+      const parY = par.map(c => years[c]).filter(Boolean);
+      if (parY.length) { years[p.id] = Math.max(...parY) + 28; continue; }
+      for (const r of DATA.relations) {
+        if (r.type !== 'coniuge') continue;
+        if (r.from === p.id && years[r.to]) { years[p.id] = years[r.to]; break; }
+        if (r.to === p.id && years[r.from]) { years[p.id] = years[r.from]; break; }
+      }
+    }
+  }
+  return years;
+}
+
+/* Build couple map */
+function buildCoupleMap() {
+  const cm = {};
+  const seen = new Set();
+  for (const r of DATA.relations) {
+    if (r.type !== 'coniuge' || !P[r.from] || !P[r.to]) continue;
+    if (seen.has(r.from) || seen.has(r.to)) continue;
+    cm[r.from] = r.to; cm[r.to] = r.from;
+    seen.add(r.from); seen.add(r.to);
+  }
+  return cm;
+}
+
+const coupleMap = buildCoupleMap();
+const estYears = estimateYears();
+
+/* Get children sorted by birth year */
+function getChildren(id) {
+  const ch = kids[id] || [];
+  const sp = coupleMap[id];
+  const spCh = sp ? (kids[sp] || []) : [];
+  const all = [...new Set([...ch, ...spCh])];
+  all.sort((a, b) => (estYears[a] || 9999) - (estYears[b] || 9999));
+  return all;
+}
+
+/* Indented vertical timeline layout:
+   Y = birth year (timeline), X = generation depth (indented)
+   Children stack vertically below parent, indented one level right */
 function layoutTree(rootId) {
   const pos = {};
-  let nextX = 0;
   const visited = new Set();
+  let nextY = 0; // track Y to avoid overlaps
 
-  function unitWidth(id) {
+  // Find minimum year in this tree
+  function collectIds(id, acc) {
+    if (acc.has(id)) return;
+    acc.add(id);
     const sp = coupleMap[id];
-    if (sp && !visited.has(sp)) {
-      return CONF.nodeW * 2 + CONF.coupleGap;
-    }
-    return CONF.nodeW;
+    if (sp && !acc.has(sp)) acc.add(sp);
+    for (const c of getChildren(id)) collectIds(c, acc);
+  }
+  const treeIds = new Set();
+  collectIds(rootId, treeIds);
+  let minYear = Infinity;
+  for (const id of treeIds) { if (estYears[id] && estYears[id] < minYear) minYear = estYears[id]; }
+  if (minYear === Infinity) minYear = 1100;
+
+  function yearToY(id) {
+    const y = estYears[id];
+    return y ? (y - minYear) * CONF.pixPerYear : 0;
   }
 
   function layout(id, depth) {
-    if (visited.has(id)) return null;
+    if (visited.has(id)) return;
     visited.add(id);
     const sp = coupleMap[id];
     if (sp) visited.add(sp);
 
-    const ch = getChildren(id);
-    const uw = unitWidth(id);
+    const x = depth * CONF.indent;
+    let yTarget = yearToY(id);
+    // Ensure no vertical overlap with previous node
+    if (yTarget < nextY) yTarget = nextY;
 
-    if (ch.length === 0) {
-      const x = nextX;
-      pos[id] = { x: x, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isLeft: true };
-      if (sp && P[sp]) {
-        pos[sp] = { x: x + CONF.nodeW + CONF.coupleGap, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isRight: true };
-        nextX += CONF.nodeW * 2 + CONF.coupleGap + CONF.hGap;
-      } else {
-        nextX += CONF.nodeW + CONF.hGap;
-      }
-      return pos[id];
-    }
-
-    // Layout children first
-    const childStartX = nextX;
-    const childPositions = [];
-    for (const c of ch) {
-      const cp = layout(c, depth + 1);
-      if (cp) childPositions.push(cp);
-    }
-
-    if (childPositions.length === 0) {
-      const x = nextX;
-      pos[id] = { x: x, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isLeft: true };
-      if (sp && P[sp]) {
-        pos[sp] = { x: x + CONF.nodeW + CONF.coupleGap, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isRight: true };
-        nextX = Math.max(nextX, x + CONF.nodeW * 2 + CONF.coupleGap + CONF.hGap);
-      } else {
-        nextX = Math.max(nextX, x + CONF.nodeW + CONF.hGap);
-      }
-      return pos[id];
-    }
-
-    // Center the couple/person above the children
-    const left = childPositions[0].x;
-    const lastChild = childPositions[childPositions.length - 1];
-    const right = lastChild.x + CONF.nodeW;
-
-    const childCenter = (left + right) / 2;
-
+    pos[id] = { x, y: yTarget, w: CONF.nodeW };
     if (sp && P[sp]) {
-      // Couple: center the pair
-      const coupleW = CONF.nodeW * 2 + CONF.coupleGap;
-      const cx = childCenter - coupleW / 2;
-      pos[id] = { x: cx, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isLeft: true };
-      pos[sp] = { x: cx + CONF.nodeW + CONF.coupleGap, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW, isRight: true };
-    } else {
-      const cx = childCenter - CONF.nodeW / 2;
-      pos[id] = { x: cx, y: depth * (CONF.nodeH + CONF.vGap), w: CONF.nodeW };
+      pos[sp] = { x: x + CONF.nodeW + CONF.coupleGap, y: yTarget, w: CONF.nodeW };
     }
+    nextY = yTarget + CONF.minYGap;
 
-    return pos[id];
+    const ch = getChildren(id);
+    for (const c of ch) {
+      layout(c, depth + 1);
+    }
   }
 
   layout(rootId, 0);
+
+  /* Align couple Y */
+  for (const id in pos) {
+    const sp = coupleMap[id];
+    if (sp && pos[sp] && pos[id]) {
+      const maxY = Math.max(pos[id].y, pos[sp].y);
+      pos[id].y = maxY; pos[sp].y = maxY;
+    }
+  }
+
   return pos;
 }
 
 function layoutForest() {
   const allPos = {};
-  let offsetX = 0;
+  let offsetY = 0;
   const placed = new Set();
   const rootNodes = DATA.persons.filter(p =>
     !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
-  ).sort((a, b) => (kids[b.id]?.length || 0) - (kids[a.id]?.length || 0));
+  ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
 
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
     const pos = layoutTree(rp.id);
-    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
     for (const k in pos) {
-      minX = Math.min(minX, pos[k].x);
-      maxX = Math.max(maxX, pos[k].x + CONF.nodeW);
+      minY = Math.min(minY, pos[k].y);
+      maxY = Math.max(maxY, pos[k].y + CONF.nodeH);
       placed.add(k);
     }
-    const shift = offsetX - minX;
-    for (const k in pos) { pos[k].x += shift; allPos[k] = pos[k]; }
-    offsetX = maxX + shift + CONF.hGap * 4;
+    const shift = offsetY - minY;
+    for (const k in pos) { pos[k].y += shift; allPos[k] = pos[k]; }
+    offsetY = maxY + shift + CONF.minYGap * 2;
   }
-
-  // Also place roots that are spouses already placed
-  // Roots without children but with a spouse who has children: skip (already placed)
-
   return allPos;
 }
 
@@ -400,10 +393,8 @@ function renderSvgTree() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const k in allPos) {
     const p = allPos[k];
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + CONF.nodeW);
-    maxY = Math.max(maxY, p.y + CONF.nodeH);
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + CONF.nodeW); maxY = Math.max(maxY, p.y + CONF.nodeH);
   }
 
   const pad = 50;
@@ -415,97 +406,58 @@ function renderSvgTree() {
   const accentColor = getComputedColor('--accent') || '#8b6914';
   const lineColor = getComputedColor('--line') || '#b89a4e';
 
-  // ── Draw couple lines (horizontal between husband & wife) ──
+  /* Couple lines */
   const coupleDrawn = new Set();
   for (const id in allPos) {
     const sp = coupleMap[id];
     if (!sp || !allPos[sp] || coupleDrawn.has(id)) continue;
-    coupleDrawn.add(id);
-    coupleDrawn.add(sp);
+    coupleDrawn.add(id); coupleDrawn.add(sp);
     const p1 = allPos[id], p2 = allPos[sp];
     const line = document.createElementNS(SVG_NS, 'line');
-    const x1 = p1.x + CONF.nodeW, y1 = p1.y + CONF.nodeH / 2;
-    const x2 = p2.x, y2 = p2.y + CONF.nodeH / 2;
-    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-    line.setAttribute('stroke', lineColor);
-    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('x1', p1.x + CONF.nodeW); line.setAttribute('y1', p1.y + CONF.nodeH / 2);
+    line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y + CONF.nodeH / 2);
+    line.setAttribute('stroke', lineColor); line.setAttribute('stroke-width', '1.5');
     g.appendChild(line);
   }
 
-  // ── Draw parent→children connections in panel style ──
-  // For each parent (or couple), find children and draw:
-  // 1. Vertical line down from parent/couple center
-  // 2. Horizontal bar at children level
-  // 3. Vertical ticks down to each child
+  /* Parent-children connections: L-shaped lines */
   const drawnChildren = new Set();
   for (const id in allPos) {
     const ch = getChildren(id);
     if (ch.length === 0) continue;
-    // Skip if spouse already drew these children
-    const childKey = ch.sort().join(',');
+    const childKey = [...ch].sort().join(',');
     if (drawnChildren.has(childKey)) continue;
     drawnChildren.add(childKey);
 
     const posP = allPos[id];
     const sp = coupleMap[id];
-    let dropX;
-    if (sp && allPos[sp]) {
-      // Drop from center of couple line
-      dropX = (posP.x + CONF.nodeW + allPos[sp].x) / 2;
-    } else {
-      dropX = posP.x + CONF.nodeW / 2;
-    }
+    let dropX = posP.x + CONF.indent / 2;
     const dropY = posP.y + CONF.nodeH;
 
-    // Find child positions
-    const childXs = ch.filter(c => allPos[c]).map(c => allPos[c].x + CONF.nodeW / 2);
-    if (childXs.length === 0) continue;
+    const validCh = ch.filter(c => allPos[c]);
+    if (validCh.length === 0) continue;
 
-    const barY = dropY + (CONF.vGap * 0.45);
+    /* Vertical line from parent down to last child */
+    const lastChildY = Math.max(...validCh.map(c => allPos[c].y + CONF.nodeH / 2));
+    const vl = document.createElementNS(SVG_NS, 'line');
+    vl.setAttribute('x1', dropX); vl.setAttribute('y1', dropY);
+    vl.setAttribute('x2', dropX); vl.setAttribute('y2', lastChildY);
+    vl.setAttribute('stroke', lineColor); vl.setAttribute('stroke-width', '1.5');
+    g.appendChild(vl);
 
-    // Vertical from parent to bar
-    const vline = document.createElementNS(SVG_NS, 'line');
-    vline.setAttribute('x1', dropX); vline.setAttribute('y1', dropY);
-    vline.setAttribute('x2', dropX); vline.setAttribute('y2', barY);
-    vline.setAttribute('stroke', lineColor);
-    vline.setAttribute('stroke-width', '1.5');
-    g.appendChild(vline);
-
-    if (childXs.length === 1) {
-      // Single child: just vertical line to child
-      const vl = document.createElementNS(SVG_NS, 'line');
-      vl.setAttribute('x1', childXs[0]); vl.setAttribute('y1', barY);
-      vl.setAttribute('x2', childXs[0]); vl.setAttribute('y2', allPos[ch.find(c => allPos[c])].y);
-      vl.setAttribute('stroke', lineColor);
-      vl.setAttribute('stroke-width', '1.5');
-      g.appendChild(vl);
-    } else {
-      // Horizontal bar connecting all children
-      const barLeft = Math.min(...childXs);
-      const barRight = Math.max(...childXs);
-      const hbar = document.createElementNS(SVG_NS, 'line');
-      hbar.setAttribute('x1', barLeft); hbar.setAttribute('y1', barY);
-      hbar.setAttribute('x2', barRight); hbar.setAttribute('y2', barY);
-      hbar.setAttribute('stroke', lineColor);
-      hbar.setAttribute('stroke-width', '1.5');
-      g.appendChild(hbar);
-
-      // Vertical ticks from bar to each child
-      for (const c of ch) {
-        if (!allPos[c]) continue;
-        const cx = allPos[c].x + CONF.nodeW / 2;
-        const vt = document.createElementNS(SVG_NS, 'line');
-        vt.setAttribute('x1', cx); vt.setAttribute('y1', barY);
-        vt.setAttribute('x2', cx); vt.setAttribute('y2', allPos[c].y);
-        vt.setAttribute('stroke', lineColor);
-        vt.setAttribute('stroke-width', '1.5');
-        g.appendChild(vt);
-      }
+    /* Horizontal ticks from vertical line to each child */
+    for (const c of validCh) {
+      const cx = allPos[c].x;
+      const cy = allPos[c].y + CONF.nodeH / 2;
+      const hl = document.createElementNS(SVG_NS, 'line');
+      hl.setAttribute('x1', dropX); hl.setAttribute('y1', cy);
+      hl.setAttribute('x2', cx); hl.setAttribute('y2', cy);
+      hl.setAttribute('stroke', lineColor); hl.setAttribute('stroke-width', '1.5');
+      g.appendChild(hl);
     }
   }
 
-  // ── Draw nodes (panel style: no boxes, just text) ──
+  /* Nodes (panel style) */
   for (const id in allPos) {
     const p = P[id];
     if (!p) continue;
@@ -515,87 +467,73 @@ function renderSvgTree() {
     ng.setAttribute('data-id', id);
     ng.style.cursor = p.group ? 'default' : 'pointer';
 
-    // Invisible hit area for clicking
     const hit = document.createElementNS(SVG_NS, 'rect');
     hit.setAttribute('x', x); hit.setAttribute('y', y);
     hit.setAttribute('width', CONF.nodeW); hit.setAttribute('height', CONF.nodeH);
-    hit.setAttribute('fill', 'transparent');
-    hit.setAttribute('stroke', 'none');
+    hit.setAttribute('fill', 'transparent'); hit.setAttribute('stroke', 'none');
     ng.appendChild(hit);
 
-    // Selected highlight (subtle underline)
     if (id === sel) {
-      const selLine = document.createElementNS(SVG_NS, 'line');
-      selLine.setAttribute('x1', x + 2); selLine.setAttribute('y1', y + CONF.nodeH - 2);
-      selLine.setAttribute('x2', x + CONF.nodeW - 2); selLine.setAttribute('y2', y + CONF.nodeH - 2);
-      selLine.setAttribute('stroke', accentColor);
-      selLine.setAttribute('stroke-width', '2');
-      ng.appendChild(selLine);
+      const sl = document.createElementNS(SVG_NS, 'line');
+      sl.setAttribute('x1', x + 2); sl.setAttribute('y1', y + CONF.nodeH - 2);
+      sl.setAttribute('x2', x + CONF.nodeW - 2); sl.setAttribute('y2', y + CONF.nodeH - 2);
+      sl.setAttribute('stroke', accentColor); sl.setAttribute('stroke-width', '2');
+      ng.appendChild(sl);
     }
 
-    // Status dot (small, left of name)
     const dot = document.createElementNS(SVG_NS, 'circle');
-    dot.setAttribute('cx', x + 5); dot.setAttribute('cy', y + 14);
-    dot.setAttribute('r', 3.5);
+    dot.setAttribute('cx', x + 5); dot.setAttribute('cy', y + 13);
+    dot.setAttribute('r', 3);
     dot.setAttribute('fill', CONF.colors[statusOf(p)] || CONF.colors.giallo);
     ng.appendChild(dot);
 
-    // Name in bold (panel style: "Nome Cognome NumPannello")
     const nameText = document.createElementNS(SVG_NS, 'text');
-    nameText.setAttribute('x', x + 14); nameText.setAttribute('y', y + 18);
-    nameText.setAttribute('font-size', '13'); nameText.setAttribute('font-weight', 'bold');
+    nameText.setAttribute('x', x + 12); nameText.setAttribute('y', y + 16);
+    nameText.setAttribute('font-size', '10'); nameText.setAttribute('font-weight', 'bold');
     nameText.setAttribute('fill', textColor);
-    nameText.setAttribute('font-family', 'Georgia, "Times New Roman", serif');
+    nameText.setAttribute('font-family', 'Georgia, serif');
     let nm = p.name;
     if (p.panelNum) nm += ' ' + p.panelNum;
-    if (nm.length > 24) nm = nm.slice(0, 22) + '…';
+    if (nm.length > 22) nm = nm.slice(0, 20) + '…';
     nameText.textContent = nm;
     ng.appendChild(nameText);
 
-    // Dates below name (smaller text)
     const d = dates(p);
     if (d) {
       const dt = document.createElementNS(SVG_NS, 'text');
-      dt.setAttribute('x', x + 6); dt.setAttribute('y', y + 34);
-      dt.setAttribute('font-size', '10');
+      dt.setAttribute('x', x + 5); dt.setAttribute('y', y + 29);
+      dt.setAttribute('font-size', '9');
       dt.setAttribute('fill', mutedColor);
-      dt.setAttribute('font-family', 'Georgia, "Times New Roman", serif');
-      dt.textContent = d.length > 30 ? d.slice(0, 28) + '…' : d;
+      dt.setAttribute('font-family', 'Georgia, serif');
+      dt.textContent = d.length > 26 ? d.slice(0, 24) + '…' : d;
       ng.appendChild(dt);
     }
 
-    // Places/roles in red (like the panel)
-    const info = [
-      ...(p.places || []).slice(0, 2),
-      ...(p.roles || []).slice(0, 1)
-    ].filter(Boolean).join(' · ');
+    const info = [...(p.places || []).slice(0, 1), ...(p.roles || []).slice(0, 1)].filter(Boolean).join(' · ');
     if (info) {
-      const infoText = document.createElementNS(SVG_NS, 'text');
-      infoText.setAttribute('x', x + 6); infoText.setAttribute('y', y + 48);
-      infoText.setAttribute('font-size', '9');
-      infoText.setAttribute('fill', '#b23a3a');
-      infoText.setAttribute('font-family', 'Georgia, "Times New Roman", serif');
-      infoText.textContent = info.length > 32 ? info.slice(0, 30) + '…' : info;
-      ng.appendChild(infoText);
+      const it = document.createElementNS(SVG_NS, 'text');
+      it.setAttribute('x', x + 5); it.setAttribute('y', y + 41);
+      it.setAttribute('font-size', '8');
+      it.setAttribute('fill', '#b23a3a');
+      it.setAttribute('font-family', 'Georgia, serif');
+      it.textContent = info.length > 28 ? info.slice(0, 26) + '…' : info;
+      ng.appendChild(it);
     }
 
-    // Spouse name if no couple pairing (second marriages etc)
     if (!coupleMap[id]) {
-      const sp = spouseNames(p).slice(0, 1).join('');
-      if (sp) {
+      const sp2 = spouseNames(p).slice(0, 1).join('');
+      if (sp2) {
         const spt = document.createElementNS(SVG_NS, 'text');
-        spt.setAttribute('x', x + 6); spt.setAttribute('y', y + (info ? 60 : 48));
-        spt.setAttribute('font-size', '9'); spt.setAttribute('font-style', 'italic');
+        spt.setAttribute('x', x + 5); spt.setAttribute('y', y + (info ? 51 : 41));
+        spt.setAttribute('font-size', '8'); spt.setAttribute('font-style', 'italic');
         spt.setAttribute('fill', accentColor);
-        spt.setAttribute('font-family', 'Georgia, "Times New Roman", serif');
-        spt.textContent = 'x ' + (sp.length > 24 ? sp.slice(0, 22) + '…' : sp);
+        spt.setAttribute('font-family', 'Georgia, serif');
+        spt.textContent = 'x ' + (sp2.length > 22 ? sp2.slice(0, 20) + '…' : sp2);
         ng.appendChild(spt);
       }
     }
 
-    if (!p.group) {
-      ng.addEventListener('click', () => openP(id));
-    }
+    if (!p.group) ng.addEventListener('click', () => openP(id));
     g.appendChild(ng);
   }
 
@@ -604,13 +542,13 @@ function renderSvgTree() {
   const soliWrap = document.getElementById('soliWrap');
   if (soli.length) {
     soliWrap.innerHTML = `<div class="section" style="padding-top:10px">
-      <p class="hint">Persone non ancora collegate a un ramo (${soli.length}):</p>
+      <p class="hint">Persone non ancora collegate (${soli.length}):</p>
       <div class="soli">${soli.map(p => {
         const sp = spouseNames(p).slice(0,2).join(', ');
-        return `<div class="node" style="display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:7px 10px;min-width:130px;max-width:200px;cursor:pointer;box-shadow:var(--shadow);text-align:left" data-id="${p.id}">
-          <b style="display:block;font-size:.85rem;line-height:1.25"><i class="dot ${statusOf(p)}"></i>${esc(p.name)}</b>
-          <div style="color:var(--muted);font-size:.72rem;margin-top:2px">${esc(dates(p))}</div>
-          ${sp ? `<div style="color:var(--accent);font-size:.72rem;font-style:italic;margin-top:2px">x ${esc(sp)}</div>` : ''}
+        return `<div class="node" style="display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:7px 10px;min-width:120px;max-width:180px;cursor:pointer;box-shadow:var(--shadow);text-align:left" data-id="${p.id}">
+          <b style="display:block;font-size:.82rem;line-height:1.2"><i class="dot ${statusOf(p)}"></i>${esc(p.name)}</b>
+          <div style="color:var(--muted);font-size:.7rem;margin-top:2px">${esc(dates(p))}</div>
+          ${sp ? `<div style="color:var(--accent);font-size:.7rem;font-style:italic;margin-top:1px">x ${esc(sp)}</div>` : ''}
         </div>`;
       }).join('')}</div></div>`;
     soliWrap.querySelectorAll('[data-id]').forEach(n => n.onclick = () => openP(n.dataset.id));
@@ -640,12 +578,12 @@ function fitToView() {
   if (!wW || !wH || !vw || !vh) return;
   svg.setAttribute('viewBox', `0 0 ${wW} ${wH}`);
   const scFull = Math.min(wW / vw, wH / vh) * 0.92;
-  if (scFull < 0.15) {
+  if (scFull < 0.12) {
     const rootPos = nodePositions['basilius'] || nodePositions[Object.keys(nodePositions)[0]];
     if (rootPos) {
-      vpan.scale = 0.45;
+      vpan.scale = 0.4;
       vpan.x = wW / 2 - (rootPos.x + CONF.nodeW / 2) * vpan.scale;
-      vpan.y = 30 - rootPos.y * vpan.scale;
+      vpan.y = 40 - rootPos.y * vpan.scale;
       applyTransform();
       return;
     }
@@ -680,7 +618,7 @@ function centerOn(id) {
   const wW = wrap.clientWidth, wH = wrap.clientHeight;
   vpan.scale = 1;
   vpan.x = wW / 2 - (pos.x + CONF.nodeW / 2);
-  vpan.y = wH / 2 - (pos.y + CONF.nodeH / 2);
+  vpan.y = wH / 3 - (pos.y + CONF.nodeH / 2);
   applyTransform();
 }
 
