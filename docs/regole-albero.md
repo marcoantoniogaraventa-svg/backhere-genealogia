@@ -1,10 +1,10 @@
 # Regole di disegno dell'albero BackHere
 
-Documento di riferimento. Versione corrente: **v1.1 (2026-10-18)**. Copia immutabile della precedente: `regole-albero_v1.0.md`.
+Documento di riferimento. Versione corrente: **v1.2 (2026-10-18)**. Copie immutabili delle precedenti: `regole-albero_v1.0.md`, `regole-albero_v1.1.md`.
 Codice di riferimento: `index.html` (ultimo commit del repo; layout = `313c4ac` + chiusura filtro `4b75750` + radici sotto segnaposto).
 Regola di manutenzione: ogni modifica alle regole crea una nuova versione in fondo a questo file; la versione precedente resta nel registro e NON si cancella. Per tornare indietro: `git checkout <commit> -- index.html`.
 
-## 1. Regole correnti (v1.1)
+## 1. Regole correnti (v1.2)
 
 ### Struttura
 1. Sviluppo **verticale**, mai orizzontale: le generazioni scendono dall'alto al basso.
@@ -29,7 +29,8 @@ Regola di manutenzione: ogni modifica alle regole crea una nuova versione in fon
 14. Una generazione = 28 anni (`GEN_YEARS`), contata da oggi. Selettore: Tutte, 10 … 3. Apertura sul sito: **3 generazioni**, centrate su Marco Antonio.
 15. Il filtro mostra anche, per ogni persona visibile: i **fratelli**, i **genitori**, i **fratelli dei genitori** (zii/prozii), il **genitore comune** di questi ultimi e i **coniugi**. Così nessun nome resta senza collegamento.
 16. Le persone **senza alcun legame** compaiono solo con "Tutte".
-17. Scegliere una persona fuori dalle generazioni selezionate porta il filtro a "Tutte".
+17. Aprire una persona fuori dalle generazioni **non** porta più a "Tutte": si aggiungono solo la persona, i suoi genitori, fratelli, coniuge e la **linea che scende fino al presente**; i rami di epoche passate senza collegamento ai rami attuali non compaiono. Cambiare il selettore azzera questa aggiunta.
+17bis. Per ogni antenato incluso nel filtro si mostra anche il suo genitore (un solo livello in più).
 
 ### Radici e segnaposto (nuovo in v1.1)
 - Una persona il cui unico genitore è un nodo-gruppo (segnaposto tipo "altri rami") conta come **radice**: non sparisce dal disegno.
@@ -58,7 +59,8 @@ Playwright su 3 generazioni e su "Tutte": 0 riquadri sovrapposti, 0 linee dentro
 | v0.6 | `abca91c` | 2026-10-17 | Righe per data, colori per cognome, ingombro a contorno | **annullata** da Greg (orizzontale, linee lunghe); resta in git |
 | — | `a6eecd1` | 2026-10-17 | Ripristino del layout 313c4ac | ripristino |
 | v1.0 | `4b75750` / `6fe3d0a` | 2026-10-18 | Chiusura del filtro (fratelli, genitori, zii, coniugi); isolati solo in "Tutte" | superata (copia: regole-albero_v1.0.md) |
-| **v1.1** | `e1d8cf3` | 2026-10-18 | Radici sotto nodi-gruppo, segnaposto per fratrie senza genitore, regola di rilettura foto; ~70 legami corretti dal pannello | **corrente** |
+| v1.1 | `e1d8cf3` | 2026-10-18 | Radici sotto nodi-gruppo, segnaposto per fratrie senza genitore, regola di rilettura foto; ~70 legami corretti | superata (copia: regole-albero_v1.1.md) |
+| **v1.2** | `15648f4` | 2026-10-18 | Aprire una persona antica non passa a "Tutte" (solo la sua linea fino al presente); genitore degli antenati inclusi | **corrente** |
 
 ### Idee provate e scartate (non riproporre senza consenso)
 - Righe per data valida per tutto l'albero: rompe lo sviluppo verticale compatto o produce larghezza ~11.500 px.
