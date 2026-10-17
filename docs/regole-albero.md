@@ -57,7 +57,8 @@ Playwright su 3 generazioni e su "Tutte": 0 riquadri sovrapposti, 0 linee dentro
 | v0.5 | `313c4ac` | 2026-10-17 | Selettore generazioni (Tutte, 10…3), apertura su 3 | base del v1.0 |
 | v0.6 | `abca91c` | 2026-10-17 | Righe per data, colori per cognome, ingombro a contorno | **annullata** da Greg (orizzontale, linee lunghe); resta in git |
 | — | `a6eecd1` | 2026-10-17 | Ripristino del layout 313c4ac | ripristino |
-| **v1.0** | `4b75750` / `6fe3d0a` | 2026-10-18 | Chiusura del filtro (fratelli, genitori, zii, coniugi); isolati solo in "Tutte" | **corrente** |
+| v1.0 | `4b75750` / `6fe3d0a` | 2026-10-18 | Chiusura del filtro (fratelli, genitori, zii, coniugi); isolati solo in "Tutte" | superata (copia: regole-albero_v1.0.md) |
+| **v1.1** | `e1d8cf3` | 2026-10-18 | Radici sotto nodi-gruppo, segnaposto per fratrie senza genitore, regola di rilettura foto; ~70 legami corretti dal pannello | **corrente** |
 
 ### Idee provate e scartate (non riproporre senza consenso)
 - Righe per data valida per tutto l'albero: rompe lo sviluppo verticale compatto o produce larghezza ~11.500 px.
@@ -65,5 +66,5 @@ Playwright su 3 generazioni e su "Tutte": 0 riquadri sovrapposti, 0 linee dentro
 
 ## 3. Come aggiornare queste regole
 1. Copiare la sezione 1 in una nuova riga del registro (sezione 2) con il commit corrente.
-2. Modificare la sezione 1 e aumentare la versione (v1.1, v2.0…).
+2. Salvare la versione attuale come copia immutabile `regole-albero_vX.Y.md`, poi modificare la sezione 1 e aumentare la versione.
 3. Salvare lo stesso file su Google Drive (cartella BackHere) e nel progetto.
