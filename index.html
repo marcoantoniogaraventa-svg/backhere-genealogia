@@ -412,11 +412,13 @@ function renderSvgTree() {
     }
     return { cx: a.x + CONF.nodeW / 2, y: a.y };
   };
-  const mkLine = (x1, y1, x2, y2) => {
+  const FAM_COLORS = ['#b23a3a','#2f6f9f','#3a7d44','#8a4fa0','#c97a1e','#1f8a85','#7a5c2e','#c2407a'];
+  let famIdx = 0;
+  const mkLine = (x1, y1, x2, y2, col) => {
     const l = document.createElementNS(SVG_NS, 'line');
     l.setAttribute('x1', x1); l.setAttribute('y1', y1);
     l.setAttribute('x2', x2); l.setAttribute('y2', y2);
-    l.setAttribute('stroke', lineColor); l.setAttribute('stroke-width', '1.5');
+    l.setAttribute('stroke', col || lineColor); l.setAttribute('stroke-width', '1.5');
     g.appendChild(l);
   };
   const doneParent = new Set();
@@ -425,10 +427,11 @@ function renderSvgTree() {
     const sp = coupleMap[id];
     doneParent.add(id);
     if (sp) doneParent.add(sp);
+    const fam = FAM_COLORS[famIdx++ % FAM_COLORS.length];
     if (sp && allPos[sp] && allPos[sp].y === allPos[id].y) {
       const a = allPos[id], b = allPos[sp];
       const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
-      mkLine(left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2);
+      mkLine(left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2, fam);
     }
     const ch = getChildren(id).filter(c => allPos[c]);
     if (!ch.length) continue;
@@ -437,9 +440,9 @@ function renderSvgTree() {
     const cs = ch.map(c => centreOf(c));
     const busY = pc.y + CONF.nodeH + 14;
     const xs = cs.map(c => c.cx).concat([pc.cx]);
-    mkLine(pc.cx, dropY, pc.cx, busY);
-    mkLine(Math.min(...xs), busY, Math.max(...xs), busY);
-    for (const c of cs) mkLine(c.cx, busY, c.cx, c.y);
+    mkLine(pc.cx, dropY, pc.cx, busY, fam);
+    mkLine(Math.min(...xs), busY, Math.max(...xs), busY, fam);
+    for (const c of cs) mkLine(c.cx, busY, c.cx, c.y, fam);
   }
 
   /* Nodes (panel style) */
