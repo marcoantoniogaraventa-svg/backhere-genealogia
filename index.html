@@ -228,8 +228,8 @@ const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.
 
 /* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
-  nodeW: 140, nodeH: 44, indent: 220, coupleGap: 6,
-  rowH: 96, sibGap: 14, forestGap: 60,
+  nodeW: 150, nodeH: 44, coupleGap: 8,
+  sibGap: 16, subGap: 16, bandGap: 24, cols: 10, bandYears: 1,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
 
@@ -292,9 +292,14 @@ function getChildren(id) {
   return all;
 }
 
-/* Classic genealogical table (as on the physical panel):
-   Y = generation row (ancestors above descendants), X = siblings side by side,
-   every parent centred above its own children; couples share one row. */
+/* Vertical genealogical table, rules taken from the physical panel:
+   R1. Vertical axis = birth year: older at the top, younger below.
+   R2. Same 25-year band = same height (tolerance 25 years).
+   R3. Children always sit in a band below their parents.
+   R4. Siblings and spouses are adjacent (same band, consecutive columns).
+   R5. Within a band, boxes fill columns left to right; a band wraps into
+       sub-rows when it is full, keeping the table portrait like the panel.
+   R6. No two boxes overlap (one grid cell per box). */
 function buildUnitTree(rootId, placed) {
   placed.add(rootId);
   const members = [rootId];
@@ -304,53 +309,64 @@ function buildUnitTree(rootId, placed) {
   for (const c of getChildren(rootId)) {
     if (!placed.has(c)) children.push(buildUnitTree(c, placed));
   }
-  return { members, children, w: 0 };
+  return { members, children };
 }
 
-const unitOwnW = u => u.members.length * CONF.nodeW + (u.members.length - 1) * CONF.coupleGap;
-
-function measureUnit(u) {
-  const own = unitOwnW(u);
-  if (!u.children.length) { u.w = own; return own; }
-  let s = 0;
-  for (const c of u.children) s += measureUnit(c);
-  s += CONF.sibGap * (u.children.length - 1);
-  u.w = Math.max(own, s);
-  return u.w;
-}
-
-function placeUnit(u, left, depth, pos) {
-  const own = unitOwnW(u);
-  const unitX = left + (u.w - own) / 2;
-  const y = depth * CONF.rowH;
-  u.members.forEach((m, i) => {
-    pos[m] = { x: unitX + i * (CONF.nodeW + CONF.coupleGap), y, w: CONF.nodeW };
-  });
-  if (!u.children.length) return;
-  let s = 0;
-  for (const c of u.children) s += c.w;
-  s += CONF.sibGap * (u.children.length - 1);
-  let cx = left + (u.w - s) / 2;
-  for (const c of u.children) {
-    placeUnit(c, cx, depth + 1, pos);
-    cx += c.w + CONF.sibGap;
-  }
+/* R1/R2: raw band index from birth year (25-year bands) */
+let PANEL_MIN_YEAR = 1100;
+function rawBand(id) {
+  const y = estYears[id];
+  if (!y) return null;
+  return Math.floor((y - PANEL_MIN_YEAR) / CONF.bandYears);
 }
 
 function layoutForest() {
-  const allPos = {};
+  const withYear = Object.keys(estYears).map(k => estYears[k]).filter(Boolean);
+  PANEL_MIN_YEAR = withYear.length ? Math.min(...withYear) : 1100;
+
   const placed = new Set();
+  const order = [];      // DFS order of persons: families stay together
+  const bandOf = {};     // person -> band index (R1, R3)
+  const walk = (u, parentBand) => {
+    let b = null;
+    for (const m of u.members) { const rb = rawBand(m); if (rb !== null) { b = rb; break; } }
+    if (b === null) b = parentBand === null ? 0 : parentBand + 1;          // R3 fallback
+    if (parentBand !== null && b <= parentBand) b = parentBand + 1;         // R3
+    for (const m of u.members) { bandOf[m] = b; order.push(m); }
+    for (const c of u.children) walk(c, b);
+  };
+
   const rootNodes = DATA.persons.filter(p =>
     !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
-  let cursor = 0;
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
-    const u = buildUnitTree(rp.id, placed);
-    measureUnit(u);
-    placeUnit(u, cursor, 0, allPos);
-    cursor += u.w + CONF.forestGap;
+    walk(buildUnitTree(rp.id, placed), null);
   }
+
+  // Compact the used bands into consecutive rows (empty years take no height)
+  const usedBands = [...new Set(Object.values(bandOf))].sort((a, b) => a - b);
+  const rowOfBand = {};
+  usedBands.forEach((b, i) => { rowOfBand[b] = i; });
+
+  const rows = usedBands.map(() => []);
+  for (const id of order) rows[rowOfBand[bandOf[id]]].push(id);
+
+  const subH = CONF.nodeH + CONF.subGap;
+  const allPos = {};
+  let y = 0;
+  rows.forEach(list => {
+    list.forEach((id, i) => {
+      const col = i % CONF.cols, sub = Math.floor(i / CONF.cols);
+      allPos[id] = {
+        x: col * (CONF.nodeW + CONF.sibGap),
+        y: y + sub * subH,
+        w: CONF.nodeW
+      };
+    });
+    const subs = Math.ceil(list.length / CONF.cols) || 1;
+    y += subs * subH + CONF.bandGap;
+  });
   return allPos;
 }
 
@@ -413,8 +429,8 @@ function renderSvgTree() {
     if (!ch.length) continue;
     const pc = centreOf(id);
     const dropY = pc.y + CONF.nodeH;
-    const busY = dropY + (CONF.rowH - CONF.nodeH) / 2;
     const cs = ch.map(c => centreOf(c));
+    const busY = dropY + 12;
     const xs = cs.map(c => c.cx).concat([pc.cx]);
     mkLine(pc.cx, dropY, pc.cx, busY);
     mkLine(Math.min(...xs), busY, Math.max(...xs), busY);
