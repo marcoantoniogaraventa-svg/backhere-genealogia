@@ -1,10 +1,10 @@
 # Regole di disegno dell'albero BackHere
 
-Documento di riferimento. Versione corrente: **v1.0 (2026-10-18)** — approvata da Greg ("così va bene per loro").
-Codice di riferimento: `index.html`, commit `6fe3d0a` (layout = `313c4ac` + chiusura filtro `4b75750`).
+Documento di riferimento. Versione corrente: **v1.1 (2026-10-18)**. Copia immutabile della precedente: `regole-albero_v1.0.md`.
+Codice di riferimento: `index.html` (ultimo commit del repo; layout = `313c4ac` + chiusura filtro `4b75750` + radici sotto segnaposto).
 Regola di manutenzione: ogni modifica alle regole crea una nuova versione in fondo a questo file; la versione precedente resta nel registro e NON si cancella. Per tornare indietro: `git checkout <commit> -- index.html`.
 
-## 1. Regole correnti (v1.0)
+## 1. Regole correnti (v1.1)
 
 ### Struttura
 1. Sviluppo **verticale**, mai orizzontale: le generazioni scendono dall'alto al basso.
@@ -30,6 +30,14 @@ Regola di manutenzione: ogni modifica alle regole crea una nuova versione in fon
 15. Il filtro mostra anche, per ogni persona visibile: i **fratelli**, i **genitori**, i **fratelli dei genitori** (zii/prozii), il **genitore comune** di questi ultimi e i **coniugi**. Così nessun nome resta senza collegamento.
 16. Le persone **senza alcun legame** compaiono solo con "Tutte".
 17. Scegliere una persona fuori dalle generazioni selezionate porta il filtro a "Tutte".
+
+### Radici e segnaposto (nuovo in v1.1)
+- Una persona il cui unico genitore è un nodo-gruppo (segnaposto tipo "altri rami") conta come **radice**: non sparisce dal disegno.
+- Una fratria con barra comune in foto ma genitore non leggibile riceve un **segnaposto** "Genitori di X (non identificati)", così i fratelli stanno su una riga con la linea.
+- Le persone senza alcun legame restano nell'elenco "non ancora collegate" sotto l'albero.
+
+### Rilettura delle foto (nuovo in v1.1)
+- I legami si correggono solo dove **due letture indipendenti coincidono** o le **date** lo impongono (genitore nato dopo il figlio = errore). I casi con una sola lettura vanno in `docs/audit-foto-2026-10-18.md` per verifica manuale.
 
 ### Dati
 18. Ogni legame ha `type` (`genitore` o `coniuge`), `from`, `to`, `sources`, `validation`. Un coniuge noto solo per nome ma non come persona NON resta come `toName`: si crea la persona.
