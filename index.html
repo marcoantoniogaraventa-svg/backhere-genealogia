@@ -327,13 +327,14 @@ function layoutForest() {
   const placed = new Set();
   const order = [];      // DFS order of persons: families stay together
   const bandOf = {};     // person -> band index (R1, R3)
-  const walk = (u, parentBand) => {
+  const parentOf = {};
+  const walk = (u, parentBand, parentRep) => {
     let b = null;
     for (const m of u.members) { const rb = rawBand(m); if (rb !== null) { b = rb; break; } }
     if (b === null) b = parentBand === null ? 0 : parentBand + 1;          // R3 fallback
     if (parentBand !== null && b <= parentBand) b = parentBand + 1;         // R3
-    for (const m of u.members) { bandOf[m] = b; order.push(m); }
-    for (const c of u.children) walk(c, b);
+    for (const m of u.members) { bandOf[m] = b; order.push(m); if (parentRep) parentOf[m] = parentRep; }
+    for (const c of u.children) walk(c, b, u.members[0]);
   };
 
   const rootNodes = DATA.persons.filter(p =>
@@ -341,7 +342,7 @@ function layoutForest() {
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
-    walk(buildUnitTree(rp.id, placed), null);
+    walk(buildUnitTree(rp.id, placed), null, null);
   }
 
   // Compact the used bands into consecutive rows (empty years take no height)
@@ -352,20 +353,24 @@ function layoutForest() {
   const rows = usedBands.map(() => []);
   for (const id of order) rows[rowOfBand[bandOf[id]]].push(id);
 
-  const subH = CONF.nodeH + CONF.subGap;
   const allPos = {};
   let y = 0;
   rows.forEach(list => {
+    let prevRight = -CONF.sibGap;
     list.forEach((id, i) => {
-      const col = i % CONF.cols, sub = Math.floor(i / CONF.cols);
-      allPos[id] = {
-        x: col * (CONF.nodeW + CONF.sibGap),
-        y: y + sub * subH,
-        w: CONF.nodeW
-      };
+      const par = parentOf[id];
+      const pp = par && allPos[par];
+      let x;
+      if (i > 0 && coupleMap[id] === list[i - 1]) {
+        x = prevRight + CONF.coupleGap;                         // spouse: next to partner
+      } else {
+        const want = pp ? pp.x + CONF.nodeW / 2 - CONF.nodeW / 2 : null; // centre under parent
+        x = Math.max(want === null ? 0 : want, prevRight + CONF.sibGap);
+      }
+      allPos[id] = { x, y, w: CONF.nodeW };
+      prevRight = x + CONF.nodeW;
     });
-    const subs = Math.ceil(list.length / CONF.cols) || 1;
-    y += subs * subH + CONF.bandGap;
+    y += CONF.nodeH + CONF.bandGap + CONF.subGap;
   });
   return allPos;
 }
@@ -447,6 +452,12 @@ function renderSvgTree() {
     ng.setAttribute('data-id', id);
     ng.style.cursor = p.group ? 'default' : 'pointer';
 
+    const frame = document.createElementNS(SVG_NS, 'rect');
+    frame.setAttribute('x', x); frame.setAttribute('y', y);
+    frame.setAttribute('width', CONF.nodeW); frame.setAttribute('height', CONF.nodeH);
+    frame.setAttribute('rx', 3); frame.setAttribute('fill', '#fdfbf5');
+    frame.setAttribute('stroke', lineColor); frame.setAttribute('stroke-width', '1');
+    ng.appendChild(frame);
     const hit = document.createElementNS(SVG_NS, 'rect');
     hit.setAttribute('x', x); hit.setAttribute('y', y);
     hit.setAttribute('width', CONF.nodeW); hit.setAttribute('height', CONF.nodeH);
