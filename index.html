@@ -315,74 +315,94 @@ function buildUnitTree(rootId, placed) {
 
 const unitOwnW = u => u.members.length * CONF.nodeW + (u.members.length - 1) * CONF.coupleGap;
 
+const WMAX = 2200;     // max width of one row of siblings: more siblings wrap to the row below
+const WRAP_MARGIN = 18; // left corridor of a wrapped family
+
 function measureUnit(u, spouseLeft) {
   if (spouseLeft && u.members.length > 1) { u.members = [u.members[1], u.members[0]]; u.bloodIdx = 1; }
   const own = unitOwnW(u);
   const half = CONF.nodeW / 2;
   const bloodOff = u.bloodIdx * (CONF.nodeW + CONF.coupleGap) + half;
-  if (!u.children.length) { u.ownX = 0; u.childX0 = 0; u.w = own; u.bloodCx = bloodOff; u.offs = []; return; }
+  u.chunks = [];
+  if (!u.children.length) { u.ownX = 0; u.childX0 = 0; u.w = own; u.bloodCx = bloodOff; u.H = CONF.rowH; return; }
   const n = u.children.length;
-  let x = 0; u.offs = [];
-  u.children.forEach((c, i) => {
-    measureUnit(c, n > 1 && i === 0);
-    u.offs.push(x);
-    x += c.w + CONF.sibGap;
+  u.children.forEach((c, i) => measureUnit(c, n > 1 && i === 0));
+  // split the siblings into rows no wider than WMAX ("a capo")
+  let cur = { kids: [], offs: [], w: 0, h: 0 };
+  u.chunks.push(cur);
+  u.children.forEach(c => {
+    if (cur.kids.length && cur.w + CONF.sibGap + c.w > WMAX) {
+      cur = { kids: [], offs: [], w: 0, h: 0 }; u.chunks.push(cur);
+    }
+    cur.offs.push(cur.kids.length ? cur.w + CONF.sibGap : 0);
+    cur.w = (cur.kids.length ? cur.w + CONF.sibGap : 0) + c.w;
+    cur.kids.push(c);
+    cur.h = Math.max(cur.h, c.H);
   });
-  const childrenW = x - CONF.sibGap;
-  const first = u.offs[0] + u.children[0].bloodCx;
-  const last = u.offs[n - 1] + u.children[n - 1].bloodCx;
-  const mid = (first + last) / 2;
-  const ownLeft = mid - own / 2;
+  const wrapped = u.chunks.length > 1;
+  const margin = wrapped ? WRAP_MARGIN : 0;
+  u.margin = margin;
+  const c0 = u.chunks[0];
+  const first = margin + c0.offs[0] + c0.kids[0].bloodCx;
+  const last = margin + c0.offs[c0.kids.length - 1] + c0.kids[c0.kids.length - 1].bloodCx;
+  const ownLeft = (first + last) / 2 - own / 2;
   const left = Math.min(0, ownLeft);
   u.ownX = ownLeft - left;
   u.childX0 = -left;
+  const childrenW = margin + Math.max(...u.chunks.map(k => k.w));
   u.w = Math.max(childrenW, ownLeft + own) - left;
   u.bloodCx = u.ownX + bloodOff;
+  u.H = CONF.rowH + u.chunks.reduce((t, k) => t + k.h, 0);
 }
 
-function placeUnit(u, left, depth, pos) {
-  const y = depth * CONF.rowH;
+const layoutMeta = { chunk: {}, gutter: {} };
+function placeUnit(u, left, y, pos) {
   u.members.forEach((m, i) => {
     pos[m] = { x: left + u.ownX + i * (CONF.nodeW + CONF.coupleGap), y, w: CONF.nodeW };
   });
-  u.children.forEach((c, i) => placeUnit(c, left + u.childX0 + u.offs[i], depth + 1, pos));
+  let cy = y + CONF.rowH;
+  u.chunks.forEach((ck, k) => {
+    ck.kids.forEach((c, i) => {
+      placeUnit(c, left + u.childX0 + u.margin + ck.offs[i], cy, pos);
+      layoutMeta.chunk[c.members[c.bloodIdx]] = k;
+    });
+    cy += ck.h;
+  });
+  if (u.chunks.length > 1) u.members.forEach(m => { layoutMeta.gutter[m] = left + u.childX0 + u.margin / 2; });
 }
 
 function layoutForest() {
   const allPos = {};
+  layoutMeta.chunk = {}; layoutMeta.gutter = {};
   const placed = new Set();
   const rootNodes = DATA.persons.filter(p =>
     !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
-  /* Trees are stacked vertically in bands (the table grows downwards, not sideways).
-     A tree whose child already sits in another tree joins that tree's band, so
-     parent and child are on consecutive generation rows. */
+  /* Trees are stacked vertically in bands: the table grows downwards, not sideways.
+     A tree whose child already sits in another tree joins that tree's band. */
   const bands = [];        // {y, right, bottom}
-  const bandOf = {};       // person -> band index
+  const bandOf = {};
   let nextY = 0;
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
     const u = buildUnitTree(rp.id, placed);
     measureUnit(u, false);
-    let band = null, depth0 = 0;
+    let band = null, y0 = 0;
     for (const m of u.members) for (const c of getChildren(m)) {
       if (allPos[c] !== undefined && bandOf[c] !== undefined) {
-        const bd = bands[bandOf[c]];
-        const d = Math.round((allPos[c].y - bd.y) / CONF.rowH) - 1;
-        if (band === null || d > depth0) { band = bandOf[c]; depth0 = Math.max(0, d); }
+        const cand = allPos[c].y - CONF.rowH;
+        if (band === null || cand > y0) { band = bandOf[c]; y0 = cand; }
       }
     }
-    if (band === null) { band = bands.length; bands.push({ y: nextY, right: 0, bottom: nextY }); }
+    if (band === null) { band = bands.length; bands.push({ y: nextY, right: 0, bottom: nextY }); y0 = nextY; }
     const bd = bands[band];
-    const left = bd.right;
-    const before = Object.keys(allPos).length;
-    placeUnit(u, left, bd.y / CONF.rowH + depth0, allPos);
-    const mark = (uu) => { uu.members.forEach(m => { bandOf[m] = band; }); uu.children.forEach(mark); };
+    y0 = Math.max(y0, bd.y);
+    placeUnit(u, bd.right, y0, allPos);
+    const mark = uu => { uu.members.forEach(m => { bandOf[m] = band; }); uu.children.forEach(mark); };
     mark(u);
-    bd.right = left + u.w + CONF.forestGap;
-    for (const id in allPos) if (bandOf[id] === band) bd.bottom = Math.max(bd.bottom, allPos[id].y + CONF.nodeH);
-    nextY = Math.max(nextY, bd.bottom + 90);
-    nextY = Math.ceil(nextY / CONF.rowH) * CONF.rowH;
+    bd.right += u.w + CONF.forestGap;
+    bd.bottom = Math.max(bd.bottom, y0 + u.H);
+    nextY = Math.max(nextY, bd.bottom + 60);
   }
   return allPos;
 }
@@ -428,7 +448,7 @@ function renderSvgTree() {
   let famIdx = 0;
   const segs = [];   // {f, col, x1,y1,x2,y2}
   const addSeg = (f, col, x1, y1, x2, y2) => segs.push({ f, col, x1, y1, x2, y2 });
-  const fams = [];
+  const buses = [];  // one horizontal bus per family and sibling row
   const doneParent = new Set();
   for (const id in allPos) {
     if (doneParent.has(id)) continue;
@@ -445,28 +465,45 @@ function renderSvgTree() {
     const ch = getChildren(id).filter(c => allPos[c] && allPos[c].y > allPos[id].y);   // children always below
     if (!ch.length) continue;
     const pc = centreOf(id);
-    const cxs = ch.map(c => allPos[c].x + CONF.nodeW / 2);   // blood child, never the spouse
-    const xs = cxs.concat([pc.cx]);
-    fams.push({ f, col, pc, ch, cxs, coupled, lo: Math.min(...xs), hi: Math.max(...xs), lane: 0 });
+    const gutter = layoutMeta.gutter[id] !== undefined ? layoutMeta.gutter[id] : layoutMeta.gutter[sp];
+    const groups = {};
+    ch.forEach(c => { const k = layoutMeta.chunk[c] || 0; (groups[k] = groups[k] || []).push(c); });
+    const fam = { f, col, pc, coupled, gutter, rows: [] };
+    Object.keys(groups).map(Number).sort((a, b) => a - b).forEach(k => {
+      const cs = groups[k], cxs = cs.map(c => allPos[c].x + CONF.nodeW / 2);
+      const xs = cxs.concat(k === 0 ? [pc.cx] : []).concat(gutter !== undefined && (k > 0 || Object.keys(groups).length > 1) ? [gutter] : []);
+      const top = Math.min(...cs.map(c => allPos[c].y));
+      const base = k === 0 ? pc.y + CONF.nodeH + 12 : top - 62;
+      const B = { fam, k, cs, cxs, lo: Math.min(...xs), hi: Math.max(...xs), base, lane: 0 };
+      fam.rows.push(B); buses.push(B);
+    });
   }
-  /* Bus lanes: families on the same row whose buses would overlap get different heights */
-  const byRow = {};
-  fams.forEach(F => (byRow[F.pc.y] = byRow[F.pc.y] || []).push(F));
-  for (const y in byRow) {
-    const list = byRow[y].sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo));
+  /* Bus lanes: buses at the same level whose spans would overlap get different heights */
+  const byBase = {};
+  buses.forEach(B => (byBase[B.base] = byBase[B.base] || []).push(B));
+  for (const y in byBase) {
+    const list = byBase[y].sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo));
     const lanes = [];
-    for (const F of list) {
+    for (const B of list) {
       let l = 0;
-      while (lanes[l] && lanes[l].some(o => o.lo < F.hi + 4 && F.lo < o.hi + 4)) l++;
-      (lanes[l] = lanes[l] || []).push(F); F.lane = l;
+      while (lanes[l] && lanes[l].some(o => o.lo < B.hi + 4 && B.lo < o.hi + 4)) l++;
+      (lanes[l] = lanes[l] || []).push(B); B.lane = l;
     }
   }
-  for (const F of fams) {
-    const busY = F.pc.y + CONF.nodeH + 12 + F.lane * 8;
-    const dropY = F.coupled ? F.pc.y + CONF.nodeH / 2 : F.pc.y + CONF.nodeH;
-    addSeg(F.f, F.col, F.pc.cx, dropY, F.pc.cx, busY);
-    addSeg(F.f, F.col, F.lo, busY, F.hi, busY);
-    F.ch.forEach((c, i) => addSeg(F.f, F.col, F.cxs[i], busY, F.cxs[i], allPos[c].y));
+  const busYOf = B => B.base + B.lane * 8;
+  const famSeen = new Set();
+  for (const B of buses) {
+    const F = B.fam, y = busYOf(B);
+    if (B.k === 0) {
+      const dropY = F.coupled ? F.pc.y + CONF.nodeH / 2 : F.pc.y + CONF.nodeH;
+      addSeg(F.f, F.col, F.pc.cx, dropY, F.pc.cx, y);
+    } else {
+      const b0 = F.rows.find(r => r.k === 0);
+      const y0 = b0 ? busYOf(b0) : F.pc.y + CONF.nodeH + 12;
+      addSeg(F.f, F.col, F.gutter, y0, F.gutter, y);      // corridor down the left side of the family
+    }
+    addSeg(F.f, F.col, B.lo, y, B.hi, y);
+    B.cs.forEach((c, i) => addSeg(F.f, F.col, B.cxs[i], y, B.cxs[i], allPos[c].y));
   }
   /* Draw; a horizontal line that crosses another family's vertical line is broken for a short gap */
   const GAP = 4;
