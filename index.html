@@ -228,8 +228,8 @@ const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.
 
 /* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
-  nodeW: 180, nodeH: 44, indent: 220, coupleGap: 10,
-  pixPerYear: 6, minYGap: 64,
+  nodeW: 140, nodeH: 44, indent: 220, coupleGap: 6,
+  rowH: 96, sibGap: 14, forestGap: 60,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
 
@@ -292,89 +292,64 @@ function getChildren(id) {
   return all;
 }
 
-/* Indented vertical timeline layout:
-   Y = birth year (timeline), X = generation depth (indented)
-   Children stack vertically below parent, indented one level right */
-function layoutTree(rootId) {
-  const pos = {};
-  const visited = new Set();
-  const nextYByDepth = {}; // track Y to avoid overlaps, PER COLUMN (depth) so a deep
-                            // branch doesn't push down unrelated siblings in other columns
-
-  // Find minimum year in this tree
-  function collectIds(id, acc) {
-    if (acc.has(id)) return;
-    acc.add(id);
-    const sp = coupleMap[id];
-    if (sp && !acc.has(sp)) acc.add(sp);
-    for (const c of getChildren(id)) collectIds(c, acc);
+/* Classic genealogical table (as on the physical panel):
+   Y = generation row (ancestors above descendants), X = siblings side by side,
+   every parent centred above its own children; couples share one row. */
+function buildUnitTree(rootId, placed) {
+  placed.add(rootId);
+  const members = [rootId];
+  const sp = coupleMap[rootId];
+  if (sp && P[sp] && !placed.has(sp)) { members.push(sp); placed.add(sp); }
+  const children = [];
+  for (const c of getChildren(rootId)) {
+    if (!placed.has(c)) children.push(buildUnitTree(c, placed));
   }
-  const treeIds = new Set();
-  collectIds(rootId, treeIds);
-  let minYear = Infinity;
-  for (const id of treeIds) { if (estYears[id] && estYears[id] < minYear) minYear = estYears[id]; }
-  if (minYear === Infinity) minYear = 1100;
+  return { members, children, w: 0 };
+}
 
-  function yearToY(id) {
-    const y = estYears[id];
-    return y ? (y - minYear) * CONF.pixPerYear : 0;
+const unitOwnW = u => u.members.length * CONF.nodeW + (u.members.length - 1) * CONF.coupleGap;
+
+function measureUnit(u) {
+  const own = unitOwnW(u);
+  if (!u.children.length) { u.w = own; return own; }
+  let s = 0;
+  for (const c of u.children) s += measureUnit(c);
+  s += CONF.sibGap * (u.children.length - 1);
+  u.w = Math.max(own, s);
+  return u.w;
+}
+
+function placeUnit(u, left, depth, pos) {
+  const own = unitOwnW(u);
+  const unitX = left + (u.w - own) / 2;
+  const y = depth * CONF.rowH;
+  u.members.forEach((m, i) => {
+    pos[m] = { x: unitX + i * (CONF.nodeW + CONF.coupleGap), y, w: CONF.nodeW };
+  });
+  if (!u.children.length) return;
+  let s = 0;
+  for (const c of u.children) s += c.w;
+  s += CONF.sibGap * (u.children.length - 1);
+  let cx = left + (u.w - s) / 2;
+  for (const c of u.children) {
+    placeUnit(c, cx, depth + 1, pos);
+    cx += c.w + CONF.sibGap;
   }
-
-  function layout(id, depth) {
-    if (visited.has(id)) return;
-    visited.add(id);
-    const sp = coupleMap[id];
-    if (sp) visited.add(sp);
-
-    const x = depth * CONF.indent;
-    let yTarget = yearToY(id);
-    // Ensure no vertical overlap with the previous node in THIS column only —
-    // a deep descendant chain must not push down unrelated siblings at this depth.
-    const colNextY = nextYByDepth[depth] || 0;
-    if (yTarget < colNextY) yTarget = colNextY;
-
-    pos[id] = { x, y: yTarget, w: CONF.nodeW };
-    // The spouse does NOT get a separate side-by-side box (that doubled the column
-    // width and caused the next generation's column to overlap it). Like the
-    // physical panel, a spouse is shown as a text line under the person's own box
-    // (see render loop below) — see getChildren()/coupleMap for descent merging.
-    nextYByDepth[depth] = yTarget + CONF.minYGap;
-
-    const ch = getChildren(id);
-    for (const c of ch) {
-      layout(c, depth + 1);
-    }
-  }
-
-  layout(rootId, 0);
-
-  return { pos, visited };
 }
 
 function layoutForest() {
   const allPos = {};
-  let offsetY = 0;
   const placed = new Set();
   const rootNodes = DATA.persons.filter(p =>
     !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
-
+  let cursor = 0;
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
-    const { pos, visited } = layoutTree(rp.id);
-    let minY = Infinity, maxY = -Infinity;
-    for (const k in pos) {
-      minY = Math.min(minY, pos[k].y);
-      maxY = Math.max(maxY, pos[k].y + CONF.nodeH);
-    }
-    // Mark EVERY person reached by this tree as placed — including spouses that
-    // have no box of their own — so a spouse with unknown ancestry (no parents,
-    // but with tracked children) isn't later treated as a second, independent
-    // root and re-laid-out from scratch, which duplicated/overwrote whole branches.
-    for (const k of visited) placed.add(k);
-    const shift = offsetY - minY;
-    for (const k in pos) { pos[k].y += shift; allPos[k] = pos[k]; }
-    offsetY = maxY + shift + CONF.minYGap * 2;
+    const u = buildUnitTree(rp.id, placed);
+    measureUnit(u);
+    placeUnit(u, cursor, 0, allPos);
+    cursor += u.w + CONF.forestGap;
   }
   return allPos;
 }
@@ -405,41 +380,45 @@ function renderSvgTree() {
   const accentColor = getComputedColor('--accent') || '#8b6914';
   const lineColor = getComputedColor('--line') || '#b89a4e';
 
-  /* Parent-children connections: L-shaped lines */
-  const drawnChildren = new Set();
-  for (const id in allPos) {
-    const ch = getChildren(id);
-    if (ch.length === 0) continue;
-    const childKey = [...ch].sort().join(',');
-    if (drawnChildren.has(childKey)) continue;
-    drawnChildren.add(childKey);
-
-    const posP = allPos[id];
+  /* Classic connectors: couple tie, then couple centre -> bus line -> each child */
+  const centreOf = id => {
+    const a = allPos[id];
     const sp = coupleMap[id];
-    let dropX = posP.x + CONF.indent / 2;
-    const dropY = posP.y + CONF.nodeH;
-
-    const validCh = ch.filter(c => allPos[c]);
-    if (validCh.length === 0) continue;
-
-    /* Vertical line from parent down to last child */
-    const lastChildY = Math.max(...validCh.map(c => allPos[c].y + CONF.nodeH / 2));
-    const vl = document.createElementNS(SVG_NS, 'line');
-    vl.setAttribute('x1', dropX); vl.setAttribute('y1', dropY);
-    vl.setAttribute('x2', dropX); vl.setAttribute('y2', lastChildY);
-    vl.setAttribute('stroke', lineColor); vl.setAttribute('stroke-width', '1.5');
-    g.appendChild(vl);
-
-    /* Horizontal ticks from vertical line to each child */
-    for (const c of validCh) {
-      const cx = allPos[c].x;
-      const cy = allPos[c].y + CONF.nodeH / 2;
-      const hl = document.createElementNS(SVG_NS, 'line');
-      hl.setAttribute('x1', dropX); hl.setAttribute('y1', cy);
-      hl.setAttribute('x2', cx); hl.setAttribute('y2', cy);
-      hl.setAttribute('stroke', lineColor); hl.setAttribute('stroke-width', '1.5');
-      g.appendChild(hl);
+    if (sp && allPos[sp] && allPos[sp].y === a.y) {
+      const b = allPos[sp];
+      const l = Math.min(a.x, b.x), r = Math.max(a.x, b.x) + CONF.nodeW;
+      return { cx: (l + r) / 2, y: a.y };
     }
+    return { cx: a.x + CONF.nodeW / 2, y: a.y };
+  };
+  const mkLine = (x1, y1, x2, y2) => {
+    const l = document.createElementNS(SVG_NS, 'line');
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+    l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    l.setAttribute('stroke', lineColor); l.setAttribute('stroke-width', '1.5');
+    g.appendChild(l);
+  };
+  const doneParent = new Set();
+  for (const id in allPos) {
+    if (doneParent.has(id)) continue;
+    const sp = coupleMap[id];
+    doneParent.add(id);
+    if (sp) doneParent.add(sp);
+    if (sp && allPos[sp] && allPos[sp].y === allPos[id].y) {
+      const a = allPos[id], b = allPos[sp];
+      const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
+      mkLine(left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2);
+    }
+    const ch = getChildren(id).filter(c => allPos[c]);
+    if (!ch.length) continue;
+    const pc = centreOf(id);
+    const dropY = pc.y + CONF.nodeH;
+    const busY = dropY + (CONF.rowH - CONF.nodeH) / 2;
+    const cs = ch.map(c => centreOf(c));
+    const xs = cs.map(c => c.cx).concat([pc.cx]);
+    mkLine(pc.cx, dropY, pc.cx, busY);
+    mkLine(Math.min(...xs), busY, Math.max(...xs), busY);
+    for (const c of cs) mkLine(c.cx, busY, c.cx, c.y);
   }
 
   /* Nodes (panel style) */
@@ -508,7 +487,8 @@ function renderSvgTree() {
     // Spouse shown as a text line under the box (like the panel), never a second
     // box — works whether the spouse is a full tracked person or external (text only).
     const spId = coupleMap[id];
-    const sp2 = spId && P[spId] ? label(P[spId]) : spouseNames(p).slice(0, 1).join('');
+    const spPlaced = spId && allPos[spId];
+    const sp2 = spPlaced ? '' : (spId && P[spId] ? label(P[spId]) : spouseNames(p).slice(0, 1).join(''));
     if (sp2) {
       const spt = document.createElementNS(SVG_NS, 'text');
       spt.setAttribute('x', x + 5); spt.setAttribute('y', y + (info ? 53 : 41));
