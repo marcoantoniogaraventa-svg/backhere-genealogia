@@ -228,7 +228,7 @@ const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.
 
 /* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
-  nodeW: 150, nodeH: 44, coupleGap: 8,
+  nodeW: 150, nodeH: 44, coupleGap: 30,
   sibGap: 16, subGap: 16, bandGap: 24, cols: 10, bandYears: 1,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
@@ -433,9 +433,9 @@ function renderSvgTree() {
     const ch = getChildren(id).filter(c => allPos[c]);
     if (!ch.length) continue;
     const pc = centreOf(id);
-    const dropY = pc.y + CONF.nodeH;
+    const dropY = pc.y + CONF.nodeH / 2;
     const cs = ch.map(c => centreOf(c));
-    const busY = dropY + 12;
+    const busY = pc.y + CONF.nodeH + 14;
     const xs = cs.map(c => c.cx).concat([pc.cx]);
     mkLine(pc.cx, dropY, pc.cx, busY);
     mkLine(Math.min(...xs), busY, Math.max(...xs), busY);
