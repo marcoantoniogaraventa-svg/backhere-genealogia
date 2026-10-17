@@ -139,10 +139,11 @@ footer a{color:var(--accent2)}
 
 <section id="albero" class="section">
   <h2 class="section-title">Albero genealogico</h2>
-  <p class="hint">Scegli una radice e la profondità; clicca un nome per aprire la scheda. Il pannello originale è frammentario: molti rami non sono ancora collegati al tronco principale.</p>
+  <p class="hint">All'apertura vedi le generazioni attuali: con «Generazioni» scegli quante mostrarne (da 3 a 10, oppure tutte); clicca un nome per aprire la scheda. Il pannello originale è frammentario: molti rami non sono ancora collegati al tronco principale.</p>
   <div class="toolbar">
     <input id="q" list="names" placeholder="cerca una persona…">
     <datalist id="names"></datalist>
+    <label>Generazioni <select id="gens"><option value="all">Tutte</option><option value="10">10</option><option value="9">9</option><option value="8">8</option><option value="7">7</option><option value="6">6</option><option value="5">5</option><option value="4">4</option><option value="3">3</option></select></label>
     <button id="mine">Il ramo di Greg</button>
     <button id="fitAll" title="mostra tutto">Mostra tutto</button>
     <button onclick="window.print()">Stampa</button>
@@ -282,6 +283,18 @@ function buildCoupleMap() {
 const coupleMap = buildCoupleMap();
 const estYears = estimateYears();
 
+/* Generation filter: generation 0 = the most recent ~28 years, 1 = the 28 before, ...
+   The selector shows the N most recent generations (default 3), or all of them. */
+const GEN_YEARS = 28;
+let genLimit = 3;
+const MAX_YEAR = Math.max(...Object.values(estYears).filter(Boolean));
+const genOf = id => estYears[id] ? Math.floor((MAX_YEAR - estYears[id]) / GEN_YEARS) : 999;
+const visible = id => genLimit === Infinity || genOf(id) < genLimit;
+function setGens(v) {
+  genLimit = v === 'all' ? Infinity : +v;
+  document.getElementById('gens').value = v;
+}
+
 /* Get children sorted by birth year */
 function getChildren(id) {
   const ch = kids[id] || [];
@@ -289,6 +302,8 @@ function getChildren(id) {
   const spCh = sp ? (kids[sp] || []) : [];
   const all = [...new Set([...ch, ...spCh])];
   all.sort((a, b) => (estYears[a] || 9999) - (estYears[b] || 9999));
+  const vis = all.filter(visible);
+  all.length = 0; all.push(...vis);
   if (all.length > 1 && all.every(c => P[c] && P[c].sibOrder !== undefined)) all.sort((a, b) => P[a].sibOrder - P[b].sibOrder);
   return all;
 }
@@ -306,7 +321,7 @@ function buildUnitTree(rootId, placed) {
   placed.add(rootId);
   const members = [rootId];
   const sp = coupleMap[rootId];
-  if (sp && P[sp] && !placed.has(sp)) { members.push(sp); placed.add(sp); }
+  if (sp && P[sp] && !placed.has(sp) && visible(sp)) { members.push(sp); placed.add(sp); }
   const children = [];
   for (const c of getChildren(rootId)) {
     if (!placed.has(c)) children.push(buildUnitTree(c, placed));
@@ -376,8 +391,10 @@ function layoutForest() {
   const allPos = {};
   layoutMeta.chunk = {}; layoutMeta.gutter = {};
   const placed = new Set();
+  const hasVisParent = id => (parents[id] || []).some(visible);
   const rootNodes = DATA.persons.filter(p =>
-    !parents[p.id] && (kids[p.id] || []).length > 0 && !p.group
+    visible(p.id) && !p.group && !hasVisParent(p.id) &&
+    ((kids[p.id] || []).some(visible) || (parents[p.id] || []).length > 0)
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
   /* Trees are stacked vertically in bands: the table grows downwards, not sideways.
      A tree whose child already sits in another tree joins that tree's band. */
@@ -420,6 +437,7 @@ function renderSvgTree() {
   const g = document.getElementById('treeG');
   g.innerHTML = '';
   const allPos = layoutForest();
+  for (const k in nodePositions) delete nodePositions[k];
   Object.assign(nodePositions, allPos);
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -627,7 +645,7 @@ function renderSvgTree() {
   }
 
   // Unconnected persons
-  const soli = DATA.persons.filter(p => !allPos[p.id] && !p.extra && !p.group);
+  const soli = DATA.persons.filter(p => !allPos[p.id] && !p.extra && !p.group && visible(p.id));
   const soliWrap = document.getElementById('soliWrap');
   if (soli.length) {
     soliWrap.innerHTML = `<div class="section" style="padding-top:10px">
@@ -700,9 +718,10 @@ function fitAll() {
 
 function centerOn(id) {
   sel = id;
+  if (!visible(id)) setGens('all');   // a person outside the selected generations: show everything
+  renderSvgTree();
   const pos = nodePositions[id];
   if (!pos) return;
-  renderSvgTree();
   const wrap = document.getElementById('treewrap');
   const wW = wrap.clientWidth, wH = wrap.clientHeight;
   vpan.scale = 1;
@@ -753,7 +772,8 @@ function findPerson(v){
 }
 document.getElementById('q').onchange=e=>{ const p=findPerson(e.target.value); if(p){ centerOn(p.id); openP(p.id);} };
 document.getElementById('mine').onclick=()=>{ sel='marco-antonio'; renderSvgTree(); centerOn('marco-antonio'); };
-document.getElementById('fitAll').onclick=()=>{ renderSvgTree(); fitAll(); };
+document.getElementById('fitAll').onclick=()=>{ setGens('all'); renderSvgTree(); fitAll(); };
+document.getElementById('gens').onchange=e=>{ setGens(e.target.value); renderSvgTree(); };
 
 /* ---------- elenco persone ---------- */
 let filt='all';
@@ -831,7 +851,8 @@ document.getElementById('built').textContent=DATA.built;
 function fromHash(){const m=location.hash.match(/p=([^&]+)/); if(m&&P[m[1]]){openP(m[1]);return true;} return false;}
 window.addEventListener('hashchange',fromHash);
 renderList();
-if(!fromHash()){ renderSvgTree(); }
+document.getElementById('gens').value='3';
+if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
 </script>
 </body>
 </html>
