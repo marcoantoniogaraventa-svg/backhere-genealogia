@@ -148,7 +148,7 @@ footer a{color:var(--accent2)}
     <button id="fitAll" title="mostra tutto">Mostra tutto</button>
     <button onclick="window.print()">Stampa</button>
   </div>
-  <div class="legend"><span><i class="dot verde"></i>confermato da più fonti</span><span><i class="dot giallo"></i>fonte unica (pannello) / indizi</span><span><i class="dot rosso"></i>nessun riscontro</span><span id="surLegend" style="display:contents"></span></div>
+  <div class="legend"><span><i class="dot verde"></i>confermato da più fonti</span><span><i class="dot giallo"></i>fonte unica (pannello) / indizi</span><span><i class="dot rosso"></i>nessun riscontro</span></div>
   <div class="treewrap" id="treewrap">
     <svg id="treeSvg"><g id="treeG"></g></svg>
     <div class="zoom-controls">
@@ -289,32 +289,11 @@ const GEN_YEARS = 28;
 let genLimit = 3;
 const MAX_YEAR = Math.max(...Object.values(estYears).filter(Boolean));
 const genOf = id => estYears[id] ? Math.floor((MAX_YEAR - estYears[id]) / GEN_YEARS) : 999;
-let VIS = new Set();
-const visible = id => VIS.has(id);
-/* Persons shown for a given limit: those born in the last N generations, plus their parents,
-   their siblings, the siblings of their parents (so grandparents and great-uncles/aunts are there),
-   their spouses, and any parent left with two or more visible children (to join them as siblings). */
-function computeVisible() {
-  const V = new Set();
-  if (genLimit === Infinity) { DATA.persons.forEach(p => V.add(p.id)); VIS = V; return; }
-  const nat = DATA.persons.filter(p => genOf(p.id) < genLimit).map(p => p.id);
-  nat.forEach(id => V.add(id));
-  const sibs = id => { const o = []; for (const par of parents[id] || []) for (const c of kids[par] || []) if (c !== id) o.push(c); return o; };
-  const P1 = new Set();
-  nat.forEach(id => (parents[id] || []).forEach(x => P1.add(x)));
-  P1.forEach(x => V.add(x));
-  nat.forEach(id => sibs(id).forEach(x => V.add(x)));
-  P1.forEach(id => sibs(id).forEach(x => V.add(x)));
-  Object.keys(kids).forEach(par => { if (!V.has(par) && (kids[par] || []).filter(c => V.has(c)).length >= 2) V.add(par); });
-  [...V].forEach(id => { const sp = coupleMap[id]; if (sp && P[sp]) V.add(sp); });
-  VIS = V;
-}
+const visible = id => genLimit === Infinity || genOf(id) < genLimit;
 function setGens(v) {
   genLimit = v === 'all' ? Infinity : +v;
   document.getElementById('gens').value = v;
-  computeVisible();
 }
-computeVisible();
 
 /* Get children sorted by birth year */
 function getChildren(id) {
@@ -352,7 +331,7 @@ function buildUnitTree(rootId, placed) {
 
 const unitOwnW = u => u.members.length * CONF.nodeW + (u.members.length - 1) * CONF.coupleGap;
 
-const WMAX = 100000;     // max width of one row of siblings: more siblings wrap to the row below
+const WMAX = 2200;     // max width of one row of siblings: more siblings wrap to the row below
 const WRAP_MARGIN = 18; // left corridor of a wrapped family
 
 function measureUnit(u, spouseLeft) {
@@ -392,51 +371,20 @@ function measureUnit(u, spouseLeft) {
   u.H = CONF.rowH + u.chunks.reduce((t, k) => t + k.h, 0);
 }
 
-const layoutMeta = { chunk: {}, gutter: {}, corr: [] };
-
-/* Vertical axis = date. Every person sits on the row of his birth year (25-year rows, the same for the
-   whole table), but never above or beside his parents' row; siblings of one row share that row. */
-const ROW_YEARS = 25;
-const MIN_YEAR = Math.min(...Object.values(estYears).filter(Boolean));
-function desiredRow(u) {
-  const m = u.members[u.bloodIdx] || u.members[0];
-  const y = estYears[m] || estYears[u.members[0]];
-  return y ? Math.floor((y - MIN_YEAR) / ROW_YEARS) : null;
-}
-function assignRows(u, minRow) {
-  const d = desiredRow(u);
-  u.row = Math.max(minRow, d === null ? minRow : d);
-  let maxRow = u.row, next = u.row + 1;
-  u.chunks.forEach(ck => {
-    // siblings share one row: the row of the eldest of them, never above the row below the parent
-    let want = null;
-    ck.kids.forEach(c => { const dd = desiredRow(c); if (dd !== null && (want === null || dd < want)) want = dd; });
-    let r = Math.max(next, want === null ? next : want);
-    ck.row = r;
-    let mx = r;
-    ck.kids.forEach(c => { mx = Math.max(mx, assignRows(c, r)); });
-    maxRow = Math.max(maxRow, mx);
-    next = mx + 1;
-  });
-  return maxRow;
-}
-
-function placeUnit(u, left, pos) {
-  const y = u.row * CONF.rowH;
+const layoutMeta = { chunk: {}, gutter: {} };
+function placeUnit(u, left, y, pos) {
   u.members.forEach((m, i) => {
     pos[m] = { x: left + u.ownX + i * (CONF.nodeW + CONF.coupleGap), y, w: CONF.nodeW };
   });
+  let cy = y + CONF.rowH;
   u.chunks.forEach((ck, k) => {
     ck.kids.forEach((c, i) => {
-      placeUnit(c, left + u.childX0 + u.margin + ck.offs[i], pos);
+      placeUnit(c, left + u.childX0 + u.margin + ck.offs[i], cy, pos);
       layoutMeta.chunk[c.members[c.bloodIdx]] = k;
     });
+    cy += ck.h;
   });
-  if (u.chunks.length > 1) {
-    const gx = left + u.childX0 + u.margin / 2;
-    u.members.forEach(m => { layoutMeta.gutter[m] = gx; });
-    layoutMeta.corr.push({ x: gx, r1: u.row + 1, r2: u.chunks[u.chunks.length - 1].row });
-  }
+  if (u.chunks.length > 1) u.members.forEach(m => { layoutMeta.gutter[m] = left + u.childX0 + u.margin / 2; });
 }
 
 function layoutForest() {
@@ -448,76 +396,37 @@ function layoutForest() {
     visible(p.id) && !p.group && !hasVisParent(p.id) &&
     ((kids[p.id] || []).some(visible) || (parents[p.id] || []).length > 0)
   ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
-  /* Trees are packed row by row: each one goes as close as possible to the origin (or to a relative
-     already placed) without touching what is already on any of its rows. */
-  const GAP = 36, occ = {};            // occ[row] = [[left, right], ...]
+  /* Trees are stacked vertically in bands: the table grows downwards, not sideways.
+     A tree whose child already sits in another tree joins that tree's band. */
+  const bands = [];        // {y, right, bottom}
+  const bandOf = {};
+  let nextY = 0;
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
     const u = buildUnitTree(rp.id, placed);
     measureUnit(u, false);
-    assignRows(u, desiredRow(u) === null ? 0 : 0);
-    layoutMeta.corr = [];
-    const tmp = {}; placeUnit(u, 0, tmp);
-    const mine = {};                    // row -> [[a, b], ...] occupied by this tree
-    const add = (row, a, b) => (mine[row] = mine[row] || []).push([a, b]);
-    for (const c of layoutMeta.corr) for (let r = c.r1; r <= c.r2; r++) add(r, c.x - 4, c.x + 4);   // side corridors
-    let want = null;
-    for (const m in tmp) {
-      const row = Math.round(tmp[m].y / CONF.rowH);
-      add(row, tmp[m].x, tmp[m].x + CONF.nodeW);
-      for (const par of parents[m] || []) {   // a parent already placed elsewhere: its drop reaches this person
-        if (allPos[par] && !tmp[par] && allPos[par].y < tmp[m].y) {
-          const rp = Math.round(allPos[par].y / CONF.rowH), cx = tmp[m].x + CONF.nodeW / 2;
-          for (let r = rp + 1; r < row; r++) add(r, cx - 4, cx + 4);
-          if (want === null) want = allPos[par].x - tmp[m].x;
-        }
-      }
-      for (const c of getChildren(m)) {
-        if (tmp[c]) {                    // long drop: keep its column free on the rows it passes
-          const rc = Math.round(tmp[c].y / CONF.rowH), cx = tmp[c].x + CONF.nodeW / 2;
-          for (let r = row + 1; r < rc; r++) add(r, cx - 4, cx + 4);
-        } else if (allPos[c] && want === null) {
-          want = allPos[c].x - tmp[m].x;   // a child already placed: stay near it
-        }
+    // place the tree at y=0 to learn each person's offset, then slide it so that a person
+    // whose child already sits in another tree ends up exactly one row above that child
+    const tmp = {};
+    placeUnit(u, 0, 0, tmp);
+    let band = null, y0 = null;
+    for (const m in tmp) for (const c of getChildren(m)) {
+      if (tmp[c] === undefined && allPos[c] !== undefined && bandOf[c] !== undefined) {
+        const cand = allPos[c].y - CONF.rowH - tmp[m].y;
+        if (band === null || cand > y0) { band = bandOf[c]; y0 = cand; }
       }
     }
-    const fits = L => {
-      for (const r in mine) for (const [a, b] of mine[r]) for (const o of occ[r] || [])
-        if (!(L + b + GAP <= o[0] || L + a - GAP >= o[1])) return false;
-      return true;
-    };
-    const cands = new Set([0]);
-    if (want !== null) cands.add(want);
-    for (const r in mine) for (const [a, b] of mine[r]) for (const o of occ[r] || []) { cands.add(o[1] + GAP - a); cands.add(o[0] - GAP - b); }
-    const pref = want !== null ? want : 0;
-    let best = null;
-    for (const L of cands) if (fits(L) && (best === null || Math.abs(L - pref) < Math.abs(best - pref))) best = L;
-    if (best === null) best = Math.max(0, ...Object.values(occ).flat().map(o => o[1])) + GAP;
-    placeUnit(u, best, allPos);
-    for (const r in mine) for (const [a, b] of mine[r]) (occ[r] = occ[r] || []).push([best + a, best + b]);
+    if (band === null) { band = bands.length; bands.push({ y: nextY, right: 0, bottom: nextY }); y0 = nextY; }
+    const bd = bands[band];
+    y0 = Math.max(y0, bd.y);
+    placeUnit(u, bd.right, y0, allPos);
+    const mark = uu => { uu.members.forEach(m => { bandOf[m] = band; }); uu.children.forEach(mark); };
+    mark(u);
+    bd.right += u.w + CONF.forestGap;
+    bd.bottom = Math.max(bd.bottom, y0 + u.H);
+    nextY = Math.max(nextY, bd.bottom + 60);
   }
   return allPos;
-}
-
-/* Colours by surname (the family line follows the surname of the children) */
-const SURNAMES = ['Garaventa','Garbugino','Inglese','Delfino','Castagnino','Liubicich','Chabesse','Gogala','Bulat','Giadrov','Rismondo','Galvani','Gospodnetich','Semonic','Ferrari-Latus','Soppe-Papali','Dominis'];
-const SUR_COL = { Garaventa:'#b23a3a', Dominis:'#2f6f9f', Garbugino:'#3a7d44', Inglese:'#8a4fa0', Delfino:'#c97a1e', Castagnino:'#1f8a85', Liubicich:'#c2407a', Chabesse:'#7a5c2e', Gogala:'#5b7a2f', Bulat:'#a0522d', Giadrov:'#4a7fb0', altro:'#8a8a8a' };
-const surMemo = {};
-function surnameOf(id, depth = 0) {
-  if (id in surMemo) return surMemo[id];
-  const p = P[id]; let r = null;
-  if (p) {
-    const toks = (p.name || '').replace(/[()]/g, '').split(/\s+/).map(t => t.toLowerCase());
-    r = SURNAMES.find(sn => toks.includes(sn.toLowerCase())) || null;
-  }
-  if (!r && depth < 40) for (const par of parents[id] || []) { r = surnameOf(par, depth + 1); if (r && r !== 'altro') break; r = null; }
-  if (!r && p && (p.sources || []).includes('pannello-dominis')) r = 'Dominis';
-  return (surMemo[id] = r || 'altro');
-}
-function surColor(sn) {
-  if (SUR_COL[sn]) return SUR_COL[sn];
-  let h = 0; for (const ch of sn) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return SUR_COL[sn] = `hsl(${h},50%,40%)`;
 }
 
 function getComputedColor(varName) {
@@ -569,24 +478,14 @@ function renderSvgTree() {
     const sp = coupleMap[id];
     doneParent.add(id);
     if (sp) doneParent.add(sp);
-    const dropFree = c => {       // a drop that would run through another box is not drawn
-      const cx = allPos[c].x + CONF.nodeW / 2, y1 = allPos[id].y + CONF.nodeH, y2 = allPos[c].y;
-      for (const q in allPos) {
-        if (q === c) continue;
-        const b = allPos[q];
-        if (cx > b.x + 1 && cx < b.x + CONF.nodeW - 1 && y1 < b.y + CONF.nodeH && y2 > b.y) return false;
-      }
-      return true;
-    };
-    const kidsAll = getChildren(id).filter(c => allPos[c] && allPos[c].y > allPos[id].y && dropFree(c));   // children always below
-    const f = ++famIdx, col = surColor(surnameOf(kidsAll.length ? kidsAll[0] : id));
+    const f = ++famIdx, col = FAM_COLORS[f % FAM_COLORS.length];
     const coupled = sp && allPos[sp] && allPos[sp].y === allPos[id].y;
     if (coupled) {
       const a = allPos[id], b = allPos[sp];
       const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
       addSeg(f, col, left.x + CONF.nodeW, left.y + CONF.nodeH / 2, right.x, right.y + CONF.nodeH / 2);
     }
-    const ch = kidsAll;
+    const ch = getChildren(id).filter(c => allPos[c] && allPos[c].y > allPos[id].y);   // children always below
     if (!ch.length) continue;
     const pc = centreOf(id);
     const gutter = layoutMeta.gutter[id] !== undefined ? layoutMeta.gutter[id] : layoutMeta.gutter[sp];
@@ -667,7 +566,7 @@ function renderSvgTree() {
     frame.setAttribute('x', x); frame.setAttribute('y', y);
     frame.setAttribute('width', CONF.nodeW); frame.setAttribute('height', CONF.nodeH);
     frame.setAttribute('rx', 3); frame.setAttribute('fill', '#fdfbf5');
-    frame.setAttribute('stroke', surColor(surnameOf(id))); frame.setAttribute('stroke-width', '1.5');
+    frame.setAttribute('stroke', lineColor); frame.setAttribute('stroke-width', '1');
     ng.appendChild(frame);
     const hit = document.createElementNS(SVG_NS, 'rect');
     hit.setAttribute('x', x); hit.setAttribute('y', y);
@@ -764,10 +663,6 @@ function renderSvgTree() {
     soliWrap.innerHTML = '';
   }
 
-  const cnt = {};
-  for (const id in allPos) { const sn = surnameOf(id); cnt[sn] = (cnt[sn] || 0) + 1; }
-  document.getElementById('surLegend').innerHTML = Object.entries(cnt).filter(e => e[0] !== 'altro').sort((a, b) => b[1] - a[1]).slice(0, 10)
-    .map(e => `<span><i class="dot" style="background:${surColor(e[0])}"></i>${e[0] === 'Dominis' ? 'de Dominis' : e[0]}</span>`).join('');
   fitToView();
 }
 
