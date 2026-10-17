@@ -4,6 +4,8 @@ Documento di riferimento. Versione corrente: **v1.3 (2026-10-18)**. Copie immuta
 Codice di riferimento: `index.html` (ultimo commit del repo; layout = `313c4ac` + chiusura filtro `4b75750` + radici sotto segnaposto).
 Regola di manutenzione: ogni modifica alle regole crea una nuova versione in fondo a questo file; la versione precedente resta nel registro e NON si cancella. Per tornare indietro: `git checkout <commit> -- index.html`.
 
+**VERSIONE APPROVATA DA GREG (18-10-2026, 00:56): v1.3, commit `87bcc8b`, ramo git `approvata-v1.3`.** Se Greg chiede "la versione approvata" o "quella che funzionava bene", si intende questa: `git checkout approvata-v1.3 -- index.html`.
+
 ## 1. Regole correnti (v1.3)
 
 ### Struttura
