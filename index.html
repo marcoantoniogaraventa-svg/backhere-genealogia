@@ -289,7 +289,25 @@ const GEN_YEARS = 28;
 let genLimit = 3;
 const MAX_YEAR = Math.max(...Object.values(estYears).filter(Boolean));
 const genOf = id => estYears[id] ? Math.floor((MAX_YEAR - estYears[id]) / GEN_YEARS) : 999;
-const visible = id => genLimit === Infinity || genOf(id) < genLimit;
+/* Closure: besides the selected generations, also show parents, their siblings, siblings and spouses of the shown people */
+const _parents = {};
+for (const r of DATA.relations) if (r.type === 'genitore') (_parents[r.to] = _parents[r.to] || []).push(r.from);
+const _sibs = id => { const o = new Set(); for (const pa of _parents[id] || []) for (const c of (kids[pa] || [])) if (c !== id) o.add(c); return o; };
+let _visCache = null;
+function _visSet() {
+  if (_visCache && _visCache.lim === genLimit) return _visCache.set;
+  const base = DATA.persons.map(p => p.id).filter(id => genOf(id) < genLimit);
+  const set = new Set(base);
+  for (const id of base) {
+    for (const s of _sibs(id)) set.add(s);
+    for (const pa of _parents[id] || []) { set.add(pa); for (const s of _sibs(pa)) set.add(s); if (coupleMap[pa]) set.add(coupleMap[pa]); }
+    if (coupleMap[id]) set.add(coupleMap[id]);
+  }
+  for (const id of [...set]) if (coupleMap[id]) set.add(coupleMap[id]);
+  _visCache = { lim: genLimit, set };
+  return set;
+}
+const visible = id => genLimit === Infinity || _visSet().has(id);
 function setGens(v) {
   genLimit = v === 'all' ? Infinity : +v;
   document.getElementById('gens').value = v;
