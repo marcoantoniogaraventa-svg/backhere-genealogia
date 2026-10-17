@@ -228,8 +228,8 @@ const hasWeb = p => !!(p.research && (p.research.findings?.length || p.research.
 
 /* ---------- SVG Tree Layout Engine (vertical timeline) ---------- */
 const CONF = {
-  nodeW: 180, nodeH: 44, indent: 80, coupleGap: 10,
-  pixPerYear: 6, minYGap: 52,
+  nodeW: 180, nodeH: 44, indent: 220, coupleGap: 10,
+  pixPerYear: 6, minYGap: 64,
   colors: { verde:'#3a7d44', giallo:'#c9a84c', rosso:'#b23a3a' }
 };
 
@@ -334,9 +334,10 @@ function layoutTree(rootId) {
     if (yTarget < colNextY) yTarget = colNextY;
 
     pos[id] = { x, y: yTarget, w: CONF.nodeW };
-    if (sp && P[sp]) {
-      pos[sp] = { x: x + CONF.nodeW + CONF.coupleGap, y: yTarget, w: CONF.nodeW };
-    }
+    // The spouse does NOT get a separate side-by-side box (that doubled the column
+    // width and caused the next generation's column to overlap it). Like the
+    // physical panel, a spouse is shown as a text line under the person's own box
+    // (see render loop below) — see getChildren()/coupleMap for descent merging.
     nextYByDepth[depth] = yTarget + CONF.minYGap;
 
     const ch = getChildren(id);
@@ -347,16 +348,7 @@ function layoutTree(rootId) {
 
   layout(rootId, 0);
 
-  /* Align couple Y */
-  for (const id in pos) {
-    const sp = coupleMap[id];
-    if (sp && pos[sp] && pos[id]) {
-      const maxY = Math.max(pos[id].y, pos[sp].y);
-      pos[id].y = maxY; pos[sp].y = maxY;
-    }
-  }
-
-  return pos;
+  return { pos, visited };
 }
 
 function layoutForest() {
@@ -369,13 +361,17 @@ function layoutForest() {
 
   for (const rp of rootNodes) {
     if (placed.has(rp.id)) continue;
-    const pos = layoutTree(rp.id);
+    const { pos, visited } = layoutTree(rp.id);
     let minY = Infinity, maxY = -Infinity;
     for (const k in pos) {
       minY = Math.min(minY, pos[k].y);
       maxY = Math.max(maxY, pos[k].y + CONF.nodeH);
-      placed.add(k);
     }
+    // Mark EVERY person reached by this tree as placed — including spouses that
+    // have no box of their own — so a spouse with unknown ancestry (no parents,
+    // but with tracked children) isn't later treated as a second, independent
+    // root and re-laid-out from scratch, which duplicated/overwrote whole branches.
+    for (const k of visited) placed.add(k);
     const shift = offsetY - minY;
     for (const k in pos) { pos[k].y += shift; allPos[k] = pos[k]; }
     offsetY = maxY + shift + CONF.minYGap * 2;
@@ -408,20 +404,6 @@ function renderSvgTree() {
   const mutedColor = getComputedColor('--muted') || '#6b6b6b';
   const accentColor = getComputedColor('--accent') || '#8b6914';
   const lineColor = getComputedColor('--line') || '#b89a4e';
-
-  /* Couple lines */
-  const coupleDrawn = new Set();
-  for (const id in allPos) {
-    const sp = coupleMap[id];
-    if (!sp || !allPos[sp] || coupleDrawn.has(id)) continue;
-    coupleDrawn.add(id); coupleDrawn.add(sp);
-    const p1 = allPos[id], p2 = allPos[sp];
-    const line = document.createElementNS(SVG_NS, 'line');
-    line.setAttribute('x1', p1.x + CONF.nodeW); line.setAttribute('y1', p1.y + CONF.nodeH / 2);
-    line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y + CONF.nodeH / 2);
-    line.setAttribute('stroke', lineColor); line.setAttribute('stroke-width', '1.5');
-    g.appendChild(line);
-  }
 
   /* Parent-children connections: L-shaped lines */
   const drawnChildren = new Set();
@@ -523,17 +505,22 @@ function renderSvgTree() {
       ng.appendChild(it);
     }
 
-    if (!coupleMap[id]) {
-      const sp2 = spouseNames(p).slice(0, 1).join('');
-      if (sp2) {
-        const spt = document.createElementNS(SVG_NS, 'text');
-        spt.setAttribute('x', x + 5); spt.setAttribute('y', y + (info ? 51 : 41));
-        spt.setAttribute('font-size', '8'); spt.setAttribute('font-style', 'italic');
-        spt.setAttribute('fill', accentColor);
-        spt.setAttribute('font-family', 'Georgia, serif');
-        spt.textContent = 'x ' + (sp2.length > 22 ? sp2.slice(0, 20) + '…' : sp2);
-        ng.appendChild(spt);
+    // Spouse shown as a text line under the box (like the panel), never a second
+    // box — works whether the spouse is a full tracked person or external (text only).
+    const spId = coupleMap[id];
+    const sp2 = spId && P[spId] ? label(P[spId]) : spouseNames(p).slice(0, 1).join('');
+    if (sp2) {
+      const spt = document.createElementNS(SVG_NS, 'text');
+      spt.setAttribute('x', x + 5); spt.setAttribute('y', y + (info ? 53 : 41));
+      spt.setAttribute('font-size', '8'); spt.setAttribute('font-style', 'italic');
+      spt.setAttribute('fill', accentColor);
+      spt.setAttribute('font-family', 'Georgia, serif');
+      spt.textContent = 'x ' + (sp2.length > 22 ? sp2.slice(0, 20) + '…' : sp2);
+      if (spId && P[spId]) {
+        spt.style.cursor = 'pointer';
+        spt.addEventListener('click', (ev) => { ev.stopPropagation(); openP(spId); });
       }
+      ng.appendChild(spt);
     }
 
     if (!p.group) ng.addEventListener('click', () => openP(id));
