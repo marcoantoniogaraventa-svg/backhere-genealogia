@@ -300,7 +300,7 @@ function _visSet() {
   const set = new Set(base);
   for (const id of base) {
     for (const s of _sibs(id)) set.add(s);
-    for (const pa of _parents[id] || []) { set.add(pa); for (const s of _sibs(pa)) set.add(s); for (const gp of _parents[pa] || []) set.add(gp); if (coupleMap[pa]) set.add(coupleMap[pa]); }
+    for (const pa of _parents[id] || []) { set.add(pa); for (const s of _sibs(pa)) set.add(s); for (const gp of _parents[pa] || []) { set.add(gp); for (const g2 of _parents[gp] || []) { set.add(g2); if (coupleMap[g2]) set.add(coupleMap[g2]); } } if (coupleMap[pa]) set.add(coupleMap[pa]); }
     if (coupleMap[id]) set.add(coupleMap[id]);
   }
   for (const id of [...set]) if (coupleMap[id]) set.add(coupleMap[id]);
