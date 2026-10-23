@@ -17885,9 +17885,14 @@ function layoutForest() {
   const placed = new Set();
   const hasVisParent = id => (parents[id] || []).some(pa => visible(pa) && !(P[pa] && P[pa].group));
   const rootNodes = DATA.persons.filter(p =>
-    visible(p.id) && !p.group && !hasVisParent(p.id) &&
-    ((kids[p.id] || []).some(visible) || (parents[p.id] || []).length > 0)
-  ).sort((a, b) => (estYears[a.id] || 9999) - (estYears[b.id] || 9999));
+    visible(p.id) && !p.group && !p.extra && !hasVisParent(p.id)
+  ).sort((a, b) => {
+    // connected trees first, then isolated persons
+    const aConn = (kids[a.id]||[]).some(visible) || (parents[a.id]||[]).length > 0 ? 0 : 1;
+    const bConn = (kids[b.id]||[]).some(visible) || (parents[b.id]||[]).length > 0 ? 0 : 1;
+    if (aConn !== bConn) return aConn - bConn;
+    return (estYears[a.id] || 9999) - (estYears[b.id] || 9999);
+  });
   /* Trees are stacked vertically in bands: the table grows downwards, not sideways.
      A tree whose child already sits in another tree joins that tree's band. */
   const bands = [];        // {y, right, bottom}
@@ -18329,7 +18334,7 @@ function openP(id){
   document.querySelectorAll('#pbody [data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();openP(a.dataset.go);});
   document.querySelector('#pbody [data-center]').onclick=()=>{closeP();centerOn(id);document.getElementById('albero').scrollIntoView();};
   document.querySelector('#pbody [data-copy]').onclick=ev=>{const u=location.href.split('#')[0]+'#p='+id; try{navigator.clipboard?.writeText(u);}catch(e){} ev.target.textContent='copiato ✓';};
-  history.replaceState(null,'','#p='+id);
+  try{history.replaceState(null,'','#p='+id);}catch(e){}
   document.getElementById('ov').classList.add('open'); document.body.style.overflow='hidden';
   document.querySelector('.panel').scrollTop=0;
 }
