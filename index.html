@@ -180,7 +180,7 @@ footer a{color:var(--accent2)}
   <div class="toolbar">
     <input id="q" list="names" placeholder="cerca una persona…">
     <datalist id="names"></datalist>
-    <label>Generazioni <select id="gens"><option value="all">Tutte</option><option value="10">10</option><option value="9">9</option><option value="8">8</option><option value="7">7</option><option value="6">6</option><option value="5">5</option><option value="4">4</option><option value="3">3</option></select></label>
+    <label>Generazioni <select id="gens"><option value="all" selected>Tutte</option><option value="10">10</option><option value="9">9</option><option value="8">8</option><option value="7">7</option><option value="6">6</option><option value="5">5</option><option value="4">4</option><option value="3">3</option></select></label>
     <button id="mine">Il ramo di Greg</button>
     <button id="fitAll" title="mostra tutto">Mostra tutto</button>
     <button onclick="window.print()">Stampa</button>
@@ -341,7 +341,7 @@ const estYears = estimateYears();
 /* Generation filter, centred on a focus person (default Marco Antonio):
    with N generations it shows N generations up (direct ancestors) and N down (direct descendants),
    the siblings of the focus and of the ancestors (zii), and all spouses. "Tutte" shows everything. */
-let genLimit = 3;
+let genLimit = Infinity;
 let focusId = 'marco-antonio';
 const _parents = {};
 for (const r of DATA.relations) if (r.type === 'genitore') (_parents[r.to] = _parents[r.to] || []).push(r.from);
