@@ -1045,13 +1045,13 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
       const t=['','figlio/a','nipote (di nonno)','pronipote','trisnipote','quadrisnipote'];
       return {degree:d<=5?t[d]:`discendente di ${d}ª generazione`,type:'discendente',gen:d};
     }
-    if(u===1&&d===1) return {degree:'fratello/sorella',type:'fratello',gen:1};
-    if(u===2&&d===1) return {degree:'zio/a',type:'zio',gen:2};
-    if(u===1&&d===2) return {degree:'nipote (di zio)',type:'nipote-zio',gen:2};
-    if(u===2&&d===2) return {degree:'cugino/a di primo grado',type:'cugino',gen:2};
-    if(u===3&&d===1) return {degree:'prozio/a',type:'prozio',gen:3};
-    if(u===1&&d===3) return {degree:'pronipote (di prozio)',type:'pronipote-zio',gen:3};
-    if(u===3&&d===3) return {degree:'cugino/a di 2° grado',type:'cugino2',gen:3};
+    if(u===1&&d===1) return {degree:'fratello/sorella',type:'fratello',gen:2};
+    if(u===2&&d===1) return {degree:'zio/a',type:'zio',gen:3};
+    if(u===1&&d===2) return {degree:'nipote (di zio)',type:'nipote-zio',gen:3};
+    if(u===2&&d===2) return {degree:'cugino/a di primo grado',type:'cugino',gen:4};
+    if(u===3&&d===1) return {degree:'prozio/a',type:'prozio',gen:4};
+    if(u===1&&d===3) return {degree:'pronipote (di prozio)',type:'pronipote-zio',gen:4};
+    if(u===3&&d===3) return {degree:'cugino/a di 2° grado',type:'cugino2',gen:6};
     const minG=Math.min(u,d), maxG=Math.max(u,d);
     if(minG===0) return {degree:`parente in linea retta (${maxG} generazioni)`,type:'linea-retta',gen:maxG};
     const cuginoGrado=minG-1;
@@ -1179,7 +1179,13 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
 
     const catena=passaggi.length?`<br><br>Ecco come si collegano, passo dopo passo: ${passaggi.join(' → poi, ')}.`:'';
     const tipoLegame=kin.affine?'affinità':'parentela';
-    const civilCode=kin.gen?`<br><span style="font-size:.82rem;color:var(--muted)">Grado di ${tipoLegame} nel diritto civile italiano: <b>${kin.gen}° grado</b> (somma dei passaggi generazionali: ${path.length-1} passi nell'albero).</span>`:'';
+    let spiegaGrado='';
+    if(kin.affine){
+      spiegaGrado=`pari al grado di parentela tra il coniuge e il suo ${kin.degree.replace(' acquisito/a','').replace(' (per affinità)','')}, art.&nbsp;78 c.c.`;
+    } else {
+      spiegaGrado=`somma dei passaggi generazionali nella linea ${kin.type==='ascendente'||kin.type==='discendente'?'retta':'collaterale'}`;
+    }
+    const civilCode=kin.gen?`<br><span style="font-size:.82rem;color:var(--muted)">Grado di ${tipoLegame} nel diritto civile italiano: <b>${kin.gen}° grado</b> (${spiegaGrado}).</span>`:'';
 
     return intro+catena+civilCode;
   }
