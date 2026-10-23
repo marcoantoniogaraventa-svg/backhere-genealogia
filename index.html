@@ -949,7 +949,7 @@ document.getElementById('built').textContent=DATA.built;
 function fromHash(){const m=location.hash.match(/p=([^&]+)/); if(m&&P[m[1]]){openP(m[1]);return true;} return false;}
 window.addEventListener('hashchange',fromHash);
 renderList();
-document.getElementById('gens').value='3';
+document.getElementById('gens').value='all'; setGens('all');
 if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
 
 /* ========== TROVA PARENTELA ========== */
