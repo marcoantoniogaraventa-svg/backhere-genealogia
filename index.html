@@ -1034,48 +1034,24 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
   }
 
   // Calcolo terminologia italiana di parentela
-  function kinshipLabel(path){
-    if(!path||path.length<2) return {degree:'Stessa persona',narrative:''};
-    // Conta i passi "su" (genitore) e "giù" (figlio) ignorando coniuge
-    const steps=path.slice(1); // esclude il primo nodo
-    const up=[],down=[];
-    let phase='up'; // prima sali, poi scendi
-    let hasConiuge=false;
-    for(const s of steps){
-      if(s.edge==='coniuge'){hasConiuge=true;continue;}
-      if(s.edge==='genitore') up.push(s.id);
-      else if(s.edge==='figlio') down.push(s.id);
-    }
-    const u=up.length, d=down.length;
-
-    // Stessa persona
-    if(u===0&&d===0&&hasConiuge) return {degree:'Coniugi',type:'coniuge',gen:0};
-    if(u===0&&d===0) return {degree:'Stessa persona',type:'self',gen:0};
-
-    // Linea retta ascendente
+  // Distingue consanguineità (sangue) da affinità (tramite coniuge)
+  function consanguineoLabel(u,d){
+    if(u===0&&d===0) return {degree:'stessa persona',type:'self',gen:0};
     if(d===0&&u>0){
-      const terms=['','genitore','nonno/a','bisnonno/a','trisnonno/a','quadrisnonno/a'];
-      const t=u<=5?terms[u]:`avo/a di ${u}ª generazione`;
-      return {degree:t,type:'ascendente',gen:u};
+      const t=['','genitore','nonno/a','bisnonno/a','trisnonno/a','quadrisnonno/a'];
+      return {degree:u<=5?t[u]:`avo/a di ${u}ª generazione`,type:'ascendente',gen:u};
     }
-    // Linea retta discendente
     if(u===0&&d>0){
-      const terms=['','figlio/a','nipote (di nonno)','pronipote','trisnipote','quadrisnipote'];
-      const t=d<=5?terms[d]:`discendente di ${d}ª generazione`;
-      return {degree:t,type:'discendente',gen:d};
+      const t=['','figlio/a','nipote (di nonno)','pronipote','trisnipote','quadrisnipote'];
+      return {degree:d<=5?t[d]:`discendente di ${d}ª generazione`,type:'discendente',gen:d};
     }
-    // Collaterali
     if(u===1&&d===1) return {degree:'fratello/sorella',type:'fratello',gen:1};
-    if(u===1&&d===2) return {degree:'nipote (di zio)',type:'nipote-zio',gen:2};
     if(u===2&&d===1) return {degree:'zio/a',type:'zio',gen:2};
-    if(u===2&&d===2) return {degree:'cugino/a (di primo grado)',type:'cugino',gen:2};
+    if(u===1&&d===2) return {degree:'nipote (di zio)',type:'nipote-zio',gen:2};
+    if(u===2&&d===2) return {degree:'cugino/a di primo grado',type:'cugino',gen:2};
     if(u===3&&d===1) return {degree:'prozio/a',type:'prozio',gen:3};
     if(u===1&&d===3) return {degree:'pronipote (di prozio)',type:'pronipote-zio',gen:3};
-    if(u===3&&d===2) return {degree:'cugino/a di 2° grado (secondo)',type:'cugino2',gen:3};
-    if(u===2&&d===3) return {degree:'cugino/a di 2° grado (secondo)',type:'cugino2',gen:3};
     if(u===3&&d===3) return {degree:'cugino/a di 2° grado',type:'cugino2',gen:3};
-
-    // Formula generica
     const minG=Math.min(u,d), maxG=Math.max(u,d);
     if(minG===0) return {degree:`parente in linea retta (${maxG} generazioni)`,type:'linea-retta',gen:maxG};
     const cuginoGrado=minG-1;
@@ -1083,6 +1059,95 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
     let t=cuginoGrado===0?'fratello/sorella':`cugino/a di ${cuginoGrado}° grado`;
     if(rimosso>0) t+=` (${rimosso} volt${rimosso>1?'e':'a'} rimosso)`;
     return {degree:t,type:'collaterale',gen:u+d};
+  }
+
+  function kinshipLabel(path){
+    if(!path||path.length<2) return {degree:'Stessa persona',type:'self',gen:0};
+    const steps=path.slice(1);
+
+    // Separa i segmenti prima e dopo ogni passaggio "coniuge"
+    // Segmenti: lista di {edges:['genitore','figlio',...]}
+    const segments=[]; let cur=[];
+    let coniugeCount=0;
+    for(const s of steps){
+      if(s.edge==='coniuge'){ coniugeCount++; if(cur.length) segments.push(cur); cur=[]; }
+      else cur.push(s.edge);
+    }
+    if(cur.length) segments.push(cur);
+
+    // Nessun coniuge → pura consanguineità
+    if(coniugeCount===0){
+      const u=steps.filter(s=>s.edge==='genitore').length;
+      const d=steps.filter(s=>s.edge==='figlio').length;
+      return consanguineoLabel(u,d);
+    }
+
+    // Solo coniuge, nessun genitore/figlio
+    if(segments.length===0||segments.every(s=>s.length===0)){
+      return {degree:'coniugi',type:'coniuge',gen:0};
+    }
+
+    // --- Affinità: il percorso passa attraverso un matrimonio ---
+    // Calcola il rapporto consanguineo su ciascun lato del coniuge
+    // Lato A = segmenti prima del primo coniuge, Lato B = segmenti dopo
+    const allEdges=steps.map(s=>s.edge);
+    const firstC=allEdges.indexOf('coniuge');
+    const edgesA=allEdges.slice(0,firstC);
+    const edgesB=allEdges.slice(firstC+1).filter(e=>e!=='coniuge');
+
+    const uA=edgesA.filter(e=>e==='genitore').length, dA=edgesA.filter(e=>e==='figlio').length;
+    const uB=edgesB.filter(e=>e==='genitore').length, dB=edgesB.filter(e=>e==='figlio').length;
+
+    // Casi comuni di affinità
+    // Coniuge diretto (nessun passo su un lato)
+    if(uA===0&&dA===0) {
+      const base=consanguineoLabel(uB,dB);
+      // B è il rapporto del coniuge → affinità
+      return affinita(base,coniugeCount);
+    }
+    if(uB===0&&dB===0) {
+      const base=consanguineoLabel(uA,dA);
+      return affinita(base,coniugeCount);
+    }
+
+    // Entrambi i lati hanno passi → rapporto misto
+    const baseA=consanguineoLabel(uA,dA);
+    const baseB=consanguineoLabel(uB,dB);
+    // Prova a dare un nome specifico
+    const totalU=uA+uB, totalD=dA+dB;
+
+    // cognato/a: fratello/sorella del coniuge, o coniuge del fratello/sorella
+    if((uA===0&&dA===0&&uB===1&&dB===1)||(uA===1&&dA===1&&uB===0&&dB===0))
+      return {degree:'cognato/a',type:'cognato',gen:1,affine:true};
+    if((uA===1&&dA===0&&uB===0&&dB===1)||(uA===0&&dA===1&&uB===1&&dB===0))
+      return {degree:'cognato/a',type:'cognato',gen:1,affine:true};
+
+    // suocero/a: genitore del coniuge
+    if(uA===0&&dA===0&&uB===1&&dB===0) return {degree:'suocero/a',type:'suocero',gen:1,affine:true};
+    if(uA===1&&dA===0&&uB===0&&dB===0) return {degree:'suocero/a',type:'suocero',gen:1,affine:true};
+    // genero/nuora: coniuge del figlio
+    if(uA===0&&dA===1&&uB===0&&dB===0) return {degree:'genero/nuora',type:'genero',gen:1,affine:true};
+    if(uA===0&&dA===0&&uB===0&&dB===1) return {degree:'genero/nuora',type:'genero',gen:1,affine:true};
+
+    // Fallback generico
+    const u=totalU, d=totalD;
+    const base=consanguineoLabel(u,d);
+    return {degree:base.degree+' (per affinità)',type:base.type,gen:base.gen,affine:true};
+  }
+
+  function affinita(base, nConiuge){
+    // Traduce un rapporto consanguineo nel corrispondente affine
+    const m={
+      'fratello/sorella':'cognato/a',
+      'genitore':'suocero/a',
+      'figlio/a':'genero/nuora',
+      'nonno/a':'nonno/a acquisito/a',
+      'zio/a':'zio/a acquisito/a',
+      'nipote (di zio)':'nipote acquisito/a (di zio)',
+      'nipote (di nonno)':'nipote acquisito/a (di nonno)',
+    };
+    const affName=m[base.degree]||(base.degree+' (per affinità)');
+    return {degree:affName,type:base.type,gen:base.gen,affine:true};
   }
 
   // Narrativa dialogativa
@@ -1102,7 +1167,10 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
     }
 
     let intro='';
-    if(kin.type==='ascendente') intro=`${nB} è <b>${kin.degree}</b> di ${nA}.`;
+    if(kin.affine){
+      // Rapporto di affinità (tramite matrimonio)
+      intro=`${nA} e ${nB} sono <b>${kin.degree}</b> — legati per <b>affinità</b> (tramite vincolo matrimoniale).`;
+    } else if(kin.type==='ascendente') intro=`${nB} è <b>${kin.degree}</b> di ${nA}.`;
     else if(kin.type==='discendente') intro=`${nB} è <b>${kin.degree}</b> di ${nA}.`;
     else if(kin.type==='fratello') intro=`${nA} e ${nB} sono <b>fratelli/sorelle</b>.`;
     else if(kin.type==='zio') intro=`${nB} è <b>zio/a</b> di ${nA}.`;
@@ -1110,7 +1178,8 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
     else intro=`${nA} e ${nB} sono <b>${kin.degree}</b>.`;
 
     const catena=passaggi.length?`<br><br>Ecco come si collegano, passo dopo passo: ${passaggi.join(' → poi, ')}.`:'';
-    const civilCode=kin.gen?`<br><span style="font-size:.82rem;color:var(--muted)">Grado di parentela nel diritto civile italiano: <b>${kin.gen}° grado</b> (somma dei passaggi generazionali: ${path.length-1} passi nell'albero).</span>`:'';
+    const tipoLegame=kin.affine?'affinità':'parentela';
+    const civilCode=kin.gen?`<br><span style="font-size:.82rem;color:var(--muted)">Grado di ${tipoLegame} nel diritto civile italiano: <b>${kin.gen}° grado</b> (somma dei passaggi generazionali: ${path.length-1} passi nell'albero).</span>`:'';
 
     return intro+catena+civilCode;
   }
