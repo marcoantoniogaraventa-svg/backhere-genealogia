@@ -147,13 +147,13 @@ footer a{color:var(--accent2)}
 .kin-card .kc-fam span{display:inline-block;font-size:.72rem;color:var(--muted);margin:1px 4px 1px 0;cursor:pointer}
 .kin-card .kc-fam span:hover{color:var(--accent);text-decoration:underline}
 .kin-card .kc-fam .kf-label{font-size:.68rem;color:var(--accent);font-weight:700;text-transform:uppercase;display:block;margin-top:3px}
+.node.kin-sel-a rect,.node.kin-sel-a polygon{stroke:#e63946!important;stroke-width:3!important;filter:drop-shadow(0 0 6px rgba(230,57,70,.5))}
+.node.kin-sel-b rect,.node.kin-sel-b polygon{stroke:#2a9d8f!important;stroke-width:3!important;filter:drop-shadow(0 0 6px rgba(42,157,143,.5))}
 @media(max-width:600px){
   .kin-overlay{padding:0;align-items:flex-end}
   .kin-panel{border-radius:var(--radius) var(--radius) 0 0;max-height:95vh}
   .kin-path{flex-direction:column;align-items:center}
   .kin-arrow{transform:rotate(90deg)}
-  .kin-sel{flex-direction:column}
-  .kin-sel input{min-width:100%}
 }
 </style>
 </head>
@@ -237,20 +237,19 @@ footer a{color:var(--accent2)}
   <p style="margin-top:4px">Ricerca a cura di Marco Antonio Garaventa · pannello originale di Gianfranco Dominis (compilazione F. M. Gogala, 1951) · aggiornato <span id="built"></span></p>
 </footer>
 
-<!-- Trova parentela overlay -->
+<!-- Trova parentela: banner selezione -->
+<div id="kinBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:400;background:var(--accent);color:#fff;text-align:center;padding:10px 16px;font-size:.95rem;font-weight:700;box-shadow:0 2px 12px rgba(0,0,0,.25)">
+  <span id="kinBannerText">Clicca la <b>prima persona</b> sull'albero…</span>
+  <button onclick="cancelKinSel()" style="margin-left:16px;padding:4px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.25);color:#fff;cursor:pointer;font-size:.85rem">✕ Annulla</button>
+</div>
+
+<!-- Trova parentela: overlay risultato -->
 <div class="kin-overlay" id="kinOv">
 <div class="kin-panel">
   <div class="kin-header"><h2>🔗 Trova parentela</h2><button class="close" onclick="closeKin()">&times;</button></div>
   <div class="kin-body">
-    <div class="kin-sel">
-      <input id="kinA" list="kinNamesA" placeholder="Prima persona…">
-      <datalist id="kinNamesA"></datalist>
-      <span style="color:var(--muted);font-weight:700">⟷</span>
-      <input id="kinB" list="kinNamesB" placeholder="Seconda persona…">
-      <datalist id="kinNamesB"></datalist>
-      <button onclick="calcKin()">Cerca</button>
-    </div>
     <div id="kinResult"></div>
+    <div style="margin-top:16px;text-align:center"><button onclick="closeKin();startKinSel()" style="padding:8px 18px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);cursor:pointer">🔄 Nuova ricerca</button></div>
   </div>
 </div>
 </div>
@@ -722,14 +721,14 @@ function renderSvgTree() {
       spt.textContent = 'x ' + (sp2.length > 22 ? sp2.slice(0, 20) + '…' : sp2);
       if (spId && P[spId]) {
         spt.style.cursor = 'pointer';
-        spt.addEventListener('click', (ev) => { ev.stopPropagation(); openP(spId); });
+        spt.addEventListener('click', (ev) => { ev.stopPropagation(); if(window._kinSelMode){window._kinPick(spId);return;} openP(spId); });
       }
       ng.appendChild(spt);
     }
 
     if (!p.group) {
       let t = null;   // one click = open the card (after a short wait); double click = centre the tree on this person
-      ng.addEventListener('click', () => { clearTimeout(t); t = setTimeout(() => openP(id), 260); });
+      ng.addEventListener('click', () => { if(window._kinSelMode){window._kinPick(id);return;} clearTimeout(t); t = setTimeout(() => openP(id), 260); });
       ng.addEventListener('dblclick', () => { clearTimeout(t); closeP(); centerOn(id); });
     }
     g.appendChild(ng);
@@ -947,25 +946,56 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
 
 /* ========== TROVA PARENTELA ========== */
 (function(){
-  // Popola datalist
-  const allP = DATA.persons.filter(p=>!p.group);
-  ['kinNamesA','kinNamesB'].forEach(dlId=>{
-    const dl=document.getElementById(dlId);
-    for(const p of allP){ dl.append(new Option(label(p))); for(const a of (p.aliases||[])) dl.append(new Option(`${a} → ${p.name}`)); }
-  });
+  // Stato selezione
+  let kinSelA=null, kinSelB=null;
+  window._kinSelMode=false;
 
-  // Apri/chiudi modale
-  document.getElementById('kinBtn').onclick=()=>{document.getElementById('kinOv').classList.add('open');document.body.style.overflow='hidden';document.getElementById('kinA').focus();};
-  window.closeKin=()=>{document.getElementById('kinOv').classList.remove('open');document.body.style.overflow='';};
+  // Avvia modalità selezione
+  window.startKinSel=function(){
+    kinSelA=null; kinSelB=null;
+    window._kinSelMode=true;
+    document.getElementById('kinBanner').style.display='block';
+    document.getElementById('kinBannerText').innerHTML='Clicca la <b>prima persona</b> sull\'albero…';
+    document.getElementById('treewrap').style.outline='3px solid var(--accent)';
+    document.querySelectorAll('.node').forEach(n=>n.classList.remove('kin-sel-a','kin-sel-b'));
+    // Scorri fino all'albero
+    document.getElementById('albero').scrollIntoView({behavior:'smooth'});
+  };
+
+  // Annulla selezione
+  window.cancelKinSel=function(){
+    window._kinSelMode=false;
+    document.getElementById('kinBanner').style.display='none';
+    document.getElementById('treewrap').style.outline='';
+    document.querySelectorAll('.node').forEach(n=>n.classList.remove('kin-sel-a','kin-sel-b'));
+    kinSelA=null; kinSelB=null;
+  };
+
+  // Pick da albero
+  window._kinPick=function(id){
+    if(!kinSelA){
+      kinSelA=id;
+      document.querySelectorAll(`.node[data-id="${id}"]`).forEach(n=>n.classList.add('kin-sel-a'));
+      document.getElementById('kinBannerText').innerHTML=`<b>${esc(P[id]?.name||id)}</b> selezionato. Ora clicca la <b>seconda persona</b>…`;
+    } else if(!kinSelB && id!==kinSelA){
+      kinSelB=id;
+      window._kinSelMode=false;
+      document.getElementById('kinBanner').style.display='none';
+      document.getElementById('treewrap').style.outline='';
+      document.querySelectorAll(`.node[data-id="${id}"]`).forEach(n=>n.classList.add('kin-sel-b'));
+      // Calcola e mostra
+      calcKinFromIds(kinSelA,kinSelB);
+    }
+  };
+
+  // Apri/chiudi modale risultato
+  document.getElementById('kinBtn').onclick=()=>startKinSel();
+  window.closeKin=()=>{document.getElementById('kinOv').classList.remove('open');document.body.style.overflow='';document.querySelectorAll('.node').forEach(n=>n.classList.remove('kin-sel-a','kin-sel-b'));};
   document.getElementById('kinOv').addEventListener('click',function(e){if(e.target===this)closeKin();});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('kinOv').classList.contains('open'))closeKin();});
-
-  // Trova persona da input
-  function findP(val){
-    const v=val.trim().toLowerCase().replace(/\s*→.*$/,'');
-    if(!v) return null;
-    return DATA.persons.find(x=>label(x).toLowerCase()===v) || DATA.persons.find(x=>x.name.toLowerCase()===v) || DATA.persons.find(x=>x.name.toLowerCase().includes(v)||(x.aliases||[]).some(a=>a.toLowerCase().includes(v)));
-  }
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&window._kinSelMode){cancelKinSel();return;}
+    if(e.key==='Escape'&&document.getElementById('kinOv').classList.contains('open'))closeKin();
+  });
 
   // BFS: trova il percorso più breve nel grafo parentale
   // Archi: genitore↔figlio, coniuge↔coniuge. Ogni arco ha un tipo.
@@ -1129,12 +1159,10 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
   }
 
   // Funzione principale
-  window.calcKin=function(){
-    const pA=findP(document.getElementById('kinA').value);
-    const pB=findP(document.getElementById('kinB').value);
+  function calcKinFromIds(idA,idB){
+    const pA=P[idA], pB=P[idB];
     const res=document.getElementById('kinResult');
-    if(!pA||!pB){res.innerHTML='<p style="color:var(--rosso)">Seleziona due persone valide dall\'elenco.</p>';return;}
-    if(pA.id===pB.id){res.innerHTML='<p style="color:var(--muted)">Hai selezionato la stessa persona due volte!</p>';return;}
+    if(!pA||!pB){res.innerHTML='<p style="color:var(--rosso)">Persona non trovata.</p>';return;}
 
     const adj=buildAdj();
     const path=bfs(adj,pA.id,pB.id);
@@ -1148,11 +1176,10 @@ if(!fromHash()){ renderSvgTree(); centerOn('marco-antonio'); }
     const cards=buildCards(path);
 
     res.innerHTML=`<div class="kin-narrative"><div class="degree">${esc(kin.degree).replace(/\//g,' / ')}</div>${narrative}</div>${cards}`;
-  };
-
-  // Enter per cercare
-  document.getElementById('kinA').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('kinB').focus();}});
-  document.getElementById('kinB').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();calcKin();}});
+    // Apri modale risultato
+    document.getElementById('kinOv').classList.add('open');
+    document.body.style.overflow='hidden';
+  }
 })();
 </script>
 </body>
